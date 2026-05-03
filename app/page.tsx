@@ -1,11 +1,8 @@
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function Home() {
   return (
-    <html lang="en">
-      <body>{children}</body>
-    </html>
+    <main style={{ padding: 20 }}>
+      <h1>CalGPT is Live 🚀</h1>
+      <p>Your AI calorie tracker is working.</p>
+    </main>
   );
 }
