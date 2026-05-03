@@ -8,14 +8,12 @@
     "next": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "tailwindcss": "latest"
+    "tailwindcss": "latest",
+    "openai": "^4.104.0"
   },
   "devDependencies": {
     "typescript": "latest",
     "@types/react": "latest",
     "@types/node": "latest"
   }
-}
-"dependencies": {
-  "openai": "^4.0.0"
 }
