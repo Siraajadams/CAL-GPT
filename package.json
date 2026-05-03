@@ -16,3 +16,6 @@
     "@types/node": "latest"
   }
 }
+"dependencies": {
+  "openai": "^4.0.0"
+}
