@@ -1,46 +1,35 @@
-import OpenAI from "openai";
-
 export async function POST(req: Request) {
   try {
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+    const { notes } = await req.json();
+
+    const text = String(notes || "").toLowerCase();
+
+    const foodGroups: string[] = [];
+
+    if (/(rice|bread|pasta|potato|pap|chips|oats|cereal)/.test(text)) {
+      foodGroups.push("Carbohydrate");
+    }
+
+    if (/(chicken|meat|beef|fish|egg|tuna|steak|lamb|beans|lentils)/.test(text)) {
+      foodGroups.push("Protein / meat");
+    }
+
+    if (/(vegetable|salad|broccoli|spinach|carrot|tomato|lettuce|greens)/.test(text)) {
+      foodGroups.push("Vegetables");
+    }
+
+    if (/(cake|sweet|chocolate|dessert|sugar|juice|soda|cooldrink)/.test(text)) {
+      foodGroups.push("Sugar / dessert");
+    }
+
+    return Response.json({
+      description: notes || "Meal image uploaded",
+      calories: 520,
+      foodGroups: foodGroups.length ? foodGroups : ["Needs AI image interpretation"],
     });
-
-    const { image, notes } = await req.json();
-
-    const response = await openai.responses.create({
-      model: "gpt-4o-mini",
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: `Analyze this meal image and description. 
-              
-Return JSON ONLY with:
-- calories (number)
-- description (string)
-- foodGroups (array of strings: protein, carbs, vegetables, sugar, fats)
-
-Notes: ${notes || ""}`,
-            },
-            {
-              type: "input_image",
-              image_url: image,
-            },
-          ],
-        },
-      ],
-    });
-
-    const text = response.output[0].content[0].text;
-
-    return Response.json(JSON.parse(text));
-  } catch (error) {
-    console.error(error);
+  } catch {
     return Response.json(
-      { error: "AI analysis failed" },
+      { error: "Could not analyse image" },
       { status: 500 }
     );
   }
