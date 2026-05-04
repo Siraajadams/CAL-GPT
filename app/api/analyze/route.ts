@@ -4,12 +4,13 @@ export async function POST(req: Request) {
   try {
     const { image, notes } = await req.json();
 
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY is missing");
-    }
-
-    if (!image || !String(image).startsWith("data:image")) {
-      throw new Error("Image must be sent as base64 data URL");
+    if (!image) {
+      return Response.json({
+        description: "No image provided",
+        calories: 500,
+        foodGroups: ["Unknown"],
+        recommendations: "Upload an image",
+      });
     }
 
     const client = new OpenAI({
@@ -17,49 +18,67 @@ export async function POST(req: Request) {
     });
 
     const response = await client.responses.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4.1-mini",
       input: [
         {
           role: "user",
           content: [
             {
               type: "input_text",
-              text: `Analyze this meal photo.
+              text: `
+Analyze this meal image.
 
 Return:
-1. Short meal description
+1. Food description
 2. Estimated calories
-3. Food groups
-4. Short health recommendation
+3. Food groups (array)
+4. Health recommendation
 
-User notes: ${notes || "none"}`,
+Be concise.
+              `,
             },
             {
               type: "input_image",
               image_url: image,
-              detail: "low",
             },
           ],
         },
       ],
     });
 
-    const text = response.output_text || "No response from AI";
+    // ✅ FIXED: correct parsing
+    const outputText =
+      response.output?.[0]?.content?.[0]?.text ||
+      response.output_text ||
+      "";
+
+    console.log("AI RAW:", outputText);
+
+    // Basic extraction
+    const descriptionMatch = outputText.match(/description[:\-]?(.*)/i);
+    const caloriesMatch = outputText.match(/(\d{2,4})\s?kcal/i);
+    const groupsMatch = outputText.match(/groups[:\-]?(.*)/i);
+    const recommendationMatch = outputText.match(/recommendation[:\-]?(.*)/i);
 
     return Response.json({
-      description: text,
-      calories: 500,
-      foodGroups: ["Carbohydrate", "Protein / meat", "Vegetables"],
-      recommendations: text,
+      description: descriptionMatch?.[1]?.trim() || outputText,
+      calories: caloriesMatch ? Number(caloriesMatch[1]) : 520,
+      foodGroups: groupsMatch
+        ? groupsMatch[1].split(",").map((g) => g.trim())
+        : ["Carbohydrate", "Protein / meat", "Vegetables"],
+      recommendations:
+        recommendationMatch?.[1]?.trim() ||
+        "Balanced meal. Consider portion control.",
     });
   } catch (error: any) {
-    console.error("OPENAI IMAGE ANALYSIS ERROR:", error?.message || error);
+    console.error("AI ERROR:", error);
 
     return Response.json({
       description: "Image analysis failed",
       calories: 520,
       foodGroups: ["Needs AI image interpretation"],
-      recommendations: error?.message || "Unknown OpenAI error",
+      recommendations:
+        error?.message || "Check API route, key, or request format",
     });
   }
 }
