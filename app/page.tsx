@@ -203,6 +203,8 @@ export default function Page() {
     foodGroups: [] as string[],
     portionAdvice: "",
     confidence: "",
+    macros: { protein: 0, carbs: 0, fat: 0, fibre: 0, sugar: 0, sodium: 0 },
+    healthScore: 0,
   });
   const [activityUpdates, setActivityUpdates] = useState<any[]>([]);
 
@@ -379,6 +381,8 @@ export default function Page() {
           ...p,
           imageName: file.name,
           imageBase64: compressedBase64,
+          macros: { protein: 0, carbs: 0, fat: 0, fibre: 0, sugar: 0, sodium: 0 },
+          healthScore: 0,
         }));
 
         setAiStatus("Image compressed. Ready for AI analysis.");
@@ -424,6 +428,8 @@ export default function Page() {
             data.portionAdvice ||
             "Please try again with a clear photo of the full plate.",
           confidence: data.confidence || "low",
+          macros: { protein: 0, carbs: 0, fat: 0, fibre: 0, sugar: 0, sodium: 0 },
+          healthScore: 0,
         }));
         setAiStatus("AI request failed");
         return;
@@ -435,6 +441,27 @@ export default function Page() {
           ? [data.foodGroup]
           : [];
 
+      const nextMacros = {
+        protein: Number(data?.macros?.protein) || Number(data?.protein) || 0,
+        carbs:
+          Number(data?.macros?.carbs) ||
+          Number(data?.macros?.carbohydrates) ||
+          Number(data?.carbs) ||
+          0,
+        fat: Number(data?.macros?.fat) || Number(data?.fat) || 0,
+        fibre:
+          Number(data?.macros?.fibre) ||
+          Number(data?.macros?.fiber) ||
+          Number(data?.fibre) ||
+          0,
+        sugar: Number(data?.macros?.sugar) || Number(data?.sugar) || 0,
+        sodium: Number(data?.macros?.sodium) || Number(data?.sodium) || 0,
+      };
+
+      const nextScore =
+        Number(data?.score) ||
+        calculateFoodScore(Number(data.calories || 0), nextMacros);
+
       setMealForm((p) => ({
         ...p,
         notes: data.description || "",
@@ -442,6 +469,8 @@ export default function Page() {
         foodGroups: groups,
         portionAdvice: data.portionAdvice || "",
         confidence: data.confidence || "",
+        macros: nextMacros,
+        healthScore: nextScore,
       }));
 
       setAiStatus("AI analysis completed");
@@ -455,6 +484,8 @@ export default function Page() {
         foodGroups: ["Needs AI image interpretation"],
         portionAdvice: "Please check your connection and try again.",
         confidence: "low",
+        macros: { protein: 0, carbs: 0, fat: 0, fibre: 0, sugar: 0, sodium: 0 },
+        healthScore: 0,
       }));
 
       setAiStatus("AI request failed");
@@ -478,6 +509,8 @@ export default function Page() {
       foodGroups,
       portionAdvice: mealForm.portionAdvice,
       confidence: mealForm.confidence,
+      macros: mealForm.macros,
+      healthScore: mealForm.healthScore,
     };
     const nextMeals = [record, ...meals];
     setMeals(nextMeals);
@@ -691,6 +724,68 @@ export default function Page() {
       </div>
     );
   };
+
+  function calculateFoodScore(caloriesValue: number, macros: any) {
+    let score = 50;
+    if (caloriesValue > 0 && caloriesValue <= 500) score += 10;
+    if (caloriesValue > 800) score -= 10;
+    if (Number(macros?.protein || 0) >= 20) score += 15;
+    if (Number(macros?.fibre || 0) >= 6) score += 10;
+    if (Number(macros?.sugar || 0) > 25) score -= 15;
+    if (Number(macros?.fat || 0) > 25) score -= 10;
+    if (Number(macros?.sodium || 0) > 800) score -= 10;
+    return Math.max(0, Math.min(100, score));
+  }
+
+  function nutritionLevel(value: number, low: number, high: number) {
+    if (!value) return "Pending";
+    if (value <= low) return "Low";
+    if (value >= high) return "High";
+    return "Moderate";
+  }
+
+  const metricCard = (
+    icon: string,
+    value: string | number,
+    unit: string,
+    label: string,
+  ) => (
+    <div
+      style={{
+        background: "rgba(15,23,42,.88)",
+        color: "white",
+        borderRadius: 18,
+        padding: 12,
+        boxShadow: "0 16px 28px rgba(0,0,0,.28)",
+        border: "1px solid rgba(16,185,129,.35)",
+        backdropFilter: "blur(10px)",
+      }}
+    >
+      <div style={{ fontSize: 18, marginBottom: 4 }}>{icon}</div>
+      <div style={{ display: "flex", alignItems: "end", gap: 4 }}>
+        <b style={{ fontSize: 28, color: "#2dd4bf", lineHeight: 1 }}>
+          {value || "--"}
+        </b>
+        {unit && (
+          <span style={{ fontSize: 12, fontWeight: 900, color: "#cbd5e1" }}>
+            {unit}
+          </span>
+        )}
+      </div>
+      <div
+        style={{
+          marginTop: 4,
+          fontSize: 9,
+          fontWeight: 950,
+          letterSpacing: 0.7,
+          textTransform: "uppercase",
+          color: "#cbd5e1",
+        }}
+      >
+        {label}
+      </div>
+    </div>
+  );
 
   return (
     <main
@@ -1400,8 +1495,229 @@ export default function Page() {
 
         {screen === "scanner" && (
           <section style={{ padding: 20 }}>
-            <h1 style={{ fontSize: 36 }}>Meal Photo Scanner</h1>
-            <div style={cardStyle}>
+            <h1 style={{ fontSize: 36, marginBottom: 14 }}>SnapCalorie Scanner</h1>
+
+            <div
+              style={{
+                background: "#071827",
+                borderRadius: 34,
+                padding: 14,
+                boxShadow: "0 24px 60px rgba(2,6,23,.30)",
+                border: "1px solid rgba(255,255,255,.12)",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  background: "rgba(15,23,42,.92)",
+                  color: "white",
+                  textAlign: "center",
+                  padding: 13,
+                  borderRadius: 18,
+                  fontWeight: 950,
+                  fontSize: 18,
+                  marginBottom: 12,
+                  boxShadow: "0 14px 32px rgba(0,0,0,.25)",
+                }}
+              >
+                SnapCalorie
+              </div>
+
+              <div
+                style={{
+                  position: "relative",
+                  minHeight: 560,
+                  borderRadius: 28,
+                  overflow: "hidden",
+                  background:
+                    "linear-gradient(145deg,rgba(20,184,166,.35),rgba(15,23,42,.95))",
+                  border: "1px solid rgba(255,255,255,.12)",
+                }}
+              >
+                {mealForm.imageBase64 ? (
+                  <img
+                    src={mealForm.imageBase64}
+                    alt="Meal preview"
+                    style={{
+                      width: "100%",
+                      height: 560,
+                      objectFit: "cover",
+                      display: "block",
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      height: 560,
+                      display: "flex",
+                      flexDirection: "column",
+                      justifyContent: "center",
+                      alignItems: "center",
+                      color: "white",
+                      textAlign: "center",
+                      padding: 28,
+                    }}
+                  >
+                    <div style={{ fontSize: 58 }}>📸</div>
+                    <h2 style={{ fontSize: 28, marginBottom: 8 }}>Upload meal photo</h2>
+                    <p style={{ color: "#cbd5e1" }}>
+                      Calories, macros and your food score will appear as floating cards.
+                    </p>
+                  </div>
+                )}
+
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    background:
+                      "linear-gradient(180deg,rgba(0,0,0,.12),rgba(0,0,0,.08),rgba(0,0,0,.65))",
+                    pointerEvents: "none",
+                  }}
+                />
+
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 16,
+                    left: 12,
+                    width: "42%",
+                    display: "grid",
+                    gap: 12,
+                  }}
+                >
+                  {metricCard(
+                    "🔥",
+                    mealForm.calories || "--",
+                    "",
+                    mealForm.calories
+                      ? `${nutritionLevel(Number(mealForm.calories), 500, 800)} calories`
+                      : "Calories",
+                  )}
+                  {metricCard(
+                    "🧂",
+                    mealForm.macros?.sodium || "--",
+                    mealForm.macros?.sodium ? "mg" : "",
+                    mealForm.macros?.sodium
+                      ? `${nutritionLevel(Number(mealForm.macros.sodium), 400, 800)} sodium`
+                      : "Sodium",
+                  )}
+                  {metricCard(
+                    "💪",
+                    mealForm.macros?.protein || "--",
+                    mealForm.macros?.protein ? "g" : "",
+                    mealForm.macros?.protein
+                      ? `${nutritionLevel(Number(mealForm.macros.protein), 10, 20)} protein`
+                      : "Protein",
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 16,
+                    right: 12,
+                    width: "42%",
+                    display: "grid",
+                    gap: 12,
+                  }}
+                >
+                  {metricCard(
+                    "🌾",
+                    mealForm.macros?.fibre || "--",
+                    mealForm.macros?.fibre ? "g" : "",
+                    mealForm.macros?.fibre
+                      ? `${nutritionLevel(Number(mealForm.macros.fibre), 3, 7)} fibre`
+                      : "Fibre",
+                  )}
+                  {metricCard(
+                    "💧",
+                    mealForm.macros?.fat || "--",
+                    mealForm.macros?.fat ? "g" : "",
+                    mealForm.macros?.fat
+                      ? `${nutritionLevel(Number(mealForm.macros.fat), 10, 25)} fat`
+                      : "Fat",
+                  )}
+                  {metricCard(
+                    "🍬",
+                    mealForm.macros?.sugar || "--",
+                    mealForm.macros?.sugar ? "g" : "",
+                    mealForm.macros?.sugar
+                      ? `${nutritionLevel(Number(mealForm.macros.sugar), 10, 25)} sugar`
+                      : "Sugar",
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    position: "absolute",
+                    left: 0,
+                    right: 0,
+                    bottom: 20,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 12,
+                    padding: "0 18px",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 112,
+                      height: 112,
+                      borderRadius: 999,
+                      background: "rgba(15,23,42,.92)",
+                      color: "white",
+                      border: "5px solid #2dd4bf",
+                      boxShadow: "0 18px 40px rgba(0,0,0,.35)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      textAlign: "center",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 18 }}>❤️</div>
+                      <div style={{ fontSize: 36, fontWeight: 950 }}>
+                        {mealForm.healthScore || "--"}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          textTransform: "uppercase",
+                          letterSpacing: 1.5,
+                          fontWeight: 950,
+                          color: "#cbd5e1",
+                        }}
+                      >
+                        Score
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    style={{
+                      width: "100%",
+                      padding: 15,
+                      borderRadius: 14,
+                      border: "1px solid rgba(255,255,255,.16)",
+                      background: "rgba(15,23,42,.94)",
+                      color: "white",
+                      fontWeight: 950,
+                      fontSize: 15,
+                      boxShadow: "0 14px 30px rgba(0,0,0,.32)",
+                    }}
+                    onClick={submitImageForAI}
+                  >
+                    {aiStatus.includes("Analyzing")
+                      ? "Analyzing meal..."
+                      : "Tap anywhere to analyze"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ ...cardStyle, marginTop: 18 }}>
               <label style={labelStyle}>
                 Meal category
                 <select
@@ -1418,36 +1734,6 @@ export default function Page() {
                 </select>
               </label>
 
-              <label style={labelStyle}>
-                Estimated calories
-                <input
-                  style={inputStyle}
-                  value={mealForm.calories}
-                  placeholder="AI estimate will appear here"
-                  onChange={(e) =>
-                    setMealForm({ ...mealForm, calories: e.target.value })
-                  }
-                />
-              </label>
-
-              <label style={labelStyle}>
-                Describe visible food on plate
-                <input
-                  style={inputStyle}
-                  value={mealForm.notes}
-                  placeholder="AI description will appear here"
-                  onChange={(e) =>
-                    setMealForm({
-                      ...mealForm,
-                      notes: e.target.value,
-                      foodGroups: e.target.value
-                        ? estimateFoodGroups(e.target.value)
-                        : [],
-                    })
-                  }
-                />
-              </label>
-
               <input
                 type="file"
                 accept="image/*"
@@ -1455,17 +1741,6 @@ export default function Page() {
                 style={{ ...inputStyle, marginBottom: 12 }}
                 onChange={(e) => handleImage(e.target.files?.[0])}
               />
-
-              <button
-                style={{
-                  ...buttonStyle,
-                  marginBottom: 16,
-                  background: "linear-gradient(135deg,#0f172a,#334155)",
-                }}
-                onClick={submitImageForAI}
-              >
-                Submit image for AI analysis
-              </button>
 
               <div
                 style={{
@@ -1484,9 +1759,39 @@ export default function Page() {
 
                 <p style={{ fontSize: 13 }}>{aiStatus}</p>
 
+                <label style={{ ...labelStyle, marginTop: 12 }}>
+                  Estimated calories
+                  <input
+                    style={inputStyle}
+                    value={mealForm.calories}
+                    placeholder="AI estimate will appear here"
+                    onChange={(e) =>
+                      setMealForm({ ...mealForm, calories: e.target.value })
+                    }
+                  />
+                </label>
+
+                <label style={labelStyle}>
+                  Describe visible food on plate
+                  <input
+                    style={inputStyle}
+                    value={mealForm.notes}
+                    placeholder="AI description will appear here"
+                    onChange={(e) =>
+                      setMealForm({
+                        ...mealForm,
+                        notes: e.target.value,
+                        foodGroups: e.target.value
+                          ? estimateFoodGroups(e.target.value)
+                          : [],
+                      })
+                    }
+                  />
+                </label>
+
                 {mealForm.portionAdvice && (
                   <p style={{ fontSize: 14, marginTop: 10 }}>
-                    <strong>Portion advice:</strong> {mealForm.portionAdvice}
+                    <strong>Clinical advice:</strong> {mealForm.portionAdvice}
                   </p>
                 )}
 
@@ -1522,6 +1827,11 @@ export default function Page() {
                 <p>
                   <b>Detected groups:</b> {m.foodGroups?.join(", ")}
                 </p>
+                {m.healthScore ? (
+                  <p>
+                    <b>Food score:</b> {m.healthScore}
+                  </p>
+                ) : null}
                 {m.portionAdvice && (
                   <p>
                     <b>Portion advice:</b> {m.portionAdvice}
