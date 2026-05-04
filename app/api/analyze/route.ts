@@ -115,11 +115,23 @@ const response = await openai.responses.create({
   ],
 } as any);
 
-    try {
-      const cleaned = raw
-        .replace(/```json/g, "")
-        .replace(/```/g, "")
-        .trim();
+const raw = response.output_text || "";
+
+let parsed: any;
+
+try {
+  const cleaned = raw
+    .replace(/```json/g, "")
+    .replace(/```/g, "")
+    .trim();
+
+  parsed = JSON.parse(cleaned);
+} catch (err) {
+  console.error("JSON parse failed:", err);
+  console.error("Raw response:", raw);
+
+  return safeFallback("AI response could not be parsed");
+}
 
       parsed = JSON.parse(cleaned);
     } catch (err) {
