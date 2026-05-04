@@ -1,11 +1,8 @@
 'use client'
 import React, { useEffect, useMemo, useState } from "react";
 import { Camera, CalendarDays, ChevronRight, ClipboardList, Download, HeartPulse, Home, LineChart, Lock, Mail, MapPin, Phone, Plus, Salad, ShieldCheck, Sparkles, User, Utensils, Weight } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { LineChart as RLineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
-
 const countries = [
   { name: "South Africa", code: "+27" },
   { name: "United Kingdom", code: "+44" },
