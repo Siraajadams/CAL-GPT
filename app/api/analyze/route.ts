@@ -1,27 +1,47 @@
 import OpenAI from "openai";
 
 export async function POST(req: Request) {
-  const openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
+  try {
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
 
-  const { image } = await req.json();
+    const { image, notes } = await req.json();
 
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "Estimate calories and macros from this meal. Return JSON." },
-          {
-            type: "image_url",
-            image_url: { url: image }
-          }
-        ],
-      },
-    ],
-  });
+    const response = await openai.responses.create({
+      model: "gpt-4o-mini",
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: `Analyze this meal image and description. 
+              
+Return JSON ONLY with:
+- calories (number)
+- description (string)
+- foodGroups (array of strings: protein, carbs, vegetables, sugar, fats)
 
-  return Response.json({ result: response.choices[0].message.content });
+Notes: ${notes || ""}`,
+            },
+            {
+              type: "input_image",
+              image_url: image,
+            },
+          ],
+        },
+      ],
+    });
+
+    const text = response.output[0].content[0].text;
+
+    return Response.json(JSON.parse(text));
+  } catch (error) {
+    console.error(error);
+    return Response.json(
+      { error: "AI analysis failed" },
+      { status: 500 }
+    );
+  }
 }
