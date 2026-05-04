@@ -4,21 +4,16 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-function fallback(notes: string) {
-  return {
-    description: notes || "Meal image uploaded",
-    calories: 520,
-    foodGroups: ["Carbohydrate", "Protein / meat", "Vegetables"],
-    recommendations: "Review portion sizes and balance protein, vegetables and carbohydrates.",
-  };
-}
-
 export async function POST(req: Request) {
   try {
     const { image, notes } = await req.json();
 
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY is missing in Vercel Environment Variables");
+    }
+
     if (!image) {
-      return Response.json(fallback(notes));
+      throw new Error("No image received from frontend");
     }
 
     const response = await openai.responses.create({
@@ -29,7 +24,10 @@ export async function POST(req: Request) {
           content: [
             {
               type: "input_text",
-              text: `Analyze this food photo. Return ONLY valid JSON with:
+              text: `Analyze this food photo.
+
+Return ONLY valid JSON in this exact structure:
+
 {
   "description": "short description of the meal",
   "calories": 0,
@@ -57,15 +55,20 @@ User notes: ${notes || ""}`,
       description: data.description || notes || "Meal analyzed",
       calories: data.calories || 520,
       foodGroups: data.foodGroups || ["Needs AI image interpretation"],
-      recommendations: data.recommendations || "No recommendation returned.",
+      recommendations:
+        data.recommendations ||
+        "Balance protein, vegetables and carbohydrates. Watch portion size.",
     });
   } catch (error: any) {
     console.error("OPENAI IMAGE ANALYSIS ERROR:", error?.message || error);
+
     return Response.json({
       description: "Image analysis failed",
       calories: 520,
       foodGroups: ["Needs AI image interpretation"],
-      recommendations: error?.message || "OpenAI analysis failed.",
+      recommendations:
+        error?.message ||
+        "OpenAI analysis failed. Check API key, image format and deployment logs.",
     });
   }
 }
