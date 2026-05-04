@@ -94,44 +94,36 @@ Rules:
 - If unsure, estimate and set confidence to low.
 `;
 
-const response = await openai.responses.create({
-  model: "gpt-4o",
-  input: [
-    {
-      role: "user",
-      content: [
+    const response = await openai.responses.create({
+      model: "gpt-4o",
+      input: [
         {
-          type: "input_text",
-          text: prompt,
-        },
-        {
-          type: "input_image",
-          image_url: {
-            url: `data:${mimeType};base64,${base64}`,
-          },
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text: prompt,
+            },
+            {
+              type: "input_image",
+              image_url: {
+                url: `data:${mimeType};base64,${base64}`,
+              },
+            },
+          ],
         },
       ],
-    },
-  ],
-} as any);
+    } as any);
 
-const raw = response.output_text || "";
+    const raw = response.output_text || "";
 
-let parsed: any;
+    let parsed: any;
 
-try {
-  const cleaned = raw
-    .replace(/```json/g, "")
-    .replace(/```/g, "")
-    .trim();
-
-  parsed = JSON.parse(cleaned);
-} catch (err) {
-  console.error("JSON parse failed:", err);
-  console.error("Raw response:", raw);
-
-  return safeFallback("AI response could not be parsed");
-}
+    try {
+      const cleaned = raw
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .trim();
 
       parsed = JSON.parse(cleaned);
     } catch (err) {
