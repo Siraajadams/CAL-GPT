@@ -137,7 +137,9 @@ export default function Page() {
 
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const maxWidth = 800;
+
+        // Aggressive compression to avoid Vercel FUNCTION_PAYLOAD_TOO_LARGE
+        const maxWidth = 400;
         const scale = Math.min(1, maxWidth / img.width);
 
         canvas.width = Math.round(img.width * scale);
@@ -146,7 +148,7 @@ export default function Page() {
         const ctx = canvas.getContext("2d");
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.6);
+        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.4);
 
         setMealForm((p) => ({
           ...p,
@@ -154,7 +156,7 @@ export default function Page() {
           imageBase64: compressedBase64,
         }));
 
-        setAiStatus("Image compressed and ready. Tap Submit image for AI analysis.");
+        setAiStatus("Image compressed. Ready for AI analysis.");
       };
 
       img.onerror = () => {
