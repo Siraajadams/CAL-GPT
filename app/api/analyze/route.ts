@@ -1,98 +1,92 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
+export const runtime = "nodejs";
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
 export async function POST(req: Request) {
   try {
-    const { image, notes } = await req.json();
+    const formData = await req.formData();
+    const file = formData.get("image") as File | null;
 
-    // 🔒 Check API key
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json({
-        description: "Image analysis failed",
-        calories: 520,
-        foodGroups: ["Needs AI image interpretation"],
-        recommendations: "OPENAI_API_KEY is missing",
-      });
+    if (!file) {
+      return NextResponse.json(
+        { error: "No image uploaded" },
+        { status: 400 }
+      );
     }
 
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
+    const bytes = await file.arrayBuffer();
+    const base64 = Buffer.from(bytes).toString("base64");
+    const mimeType = file.type || "image/jpeg";
 
-    // 🧠 Call OpenAI
-    const response = await openai.responses.create({
+    const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
-      input: [
+      messages: [
         {
           role: "user",
           content: [
             {
-              type: "input_text",
-              text: `Return ONLY valid JSON. No markdown.
+              type: "text",
+              text: `
+Analyze this food image.
+
+Return ONLY valid JSON in this exact format:
 
 {
-  "description": "short meal description",
   "calories": number,
-  "foodGroups": ["Carbohydrate", "Protein / meat", "Vegetables"],
-  "recommendations": "short practical advice"
+  "description": "short description of visible food",
+  "foodGroup": "main food groups",
+  "portionAdvice": "short portion recommendation",
+  "confidence": "low, medium or high"
 }
-
-Notes: ${notes || "none"}
-`,
+              `,
             },
-            ...(image
-              ? [
-                  {
-                    type: "input_image",
-                    image_url: image,
-                    detail: "low",
-                  },
-                ]
-              : []),
-          ] as any,
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mimeType};base64,${base64}`,
+              },
+            },
+          ],
         },
       ],
     });
 
-    // 🔑 Extract AI output safely
-   const outputText = response.output_text || "";
+    const raw = response.choices[0]?.message?.content || "";
 
     let parsed;
 
     try {
-      const cleaned = outputText.replace(/```json|```/g, "").trim();
-      parsed = JSON.parse(cleaned);
+      parsed = JSON.parse(raw);
     } catch {
-      parsed = {
-        description: outputText || "Meal analyzed",
-        calories: 520,
-        foodGroups: ["Needs AI image interpretation"],
-        recommendations: "AI returned text instead of JSON",
-      };
+      return NextResponse.json(
+        {
+          error: "AI response could not be parsed",
+          raw,
+        },
+        { status: 500 }
+      );
     }
 
-    // ✅ FINAL RETURN (THIS WAS YOUR MISSING PIECE)
     return NextResponse.json({
-      description: parsed.description || "Meal analyzed",
-      calories: Number(parsed.calories) || 520,
-      foodGroups:
-        Array.isArray(parsed.foodGroups) && parsed.foodGroups.length
-          ? parsed.foodGroups
-          : ["Needs AI image interpretation"],
-      recommendations:
-        parsed.recommendations ||
-        "Balance protein, vegetables and carbohydrates.",
+      calories: parsed.calories || 0,
+      description: parsed.description || "Food detected",
+      foodGroup: parsed.foodGroup || "Mixed food group",
+      portionAdvice: parsed.portionAdvice || "Use balanced portions.",
+      confidence: parsed.confidence || "medium",
     });
-
   } catch (error: any) {
-    console.error("OPENAI ERROR:", error?.message || error);
+    console.error("Image analysis error:", error);
 
-    return NextResponse.json({
-      description: "Image analysis failed",
-      calories: 520,
-      foodGroups: ["Needs AI image interpretation"],
-      recommendations:
-        error?.message || "AI request failed",
-    });
+    return NextResponse.json(
+      {
+        error: error?.message || "Image analysis failed",
+      },
+      { status: 500 }
+    );
   }
 }
