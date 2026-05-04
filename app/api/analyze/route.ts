@@ -8,44 +8,31 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-function safeFallback(message = "AI request failed") {
+function fallback(message = "AI request failed") {
   return NextResponse.json({
-    error: message,
     calories: 0,
     description: "Image analysis failed",
     foodGroup: "Upload a clearer food image",
-    portionAdvice: "Please try again with a clear photo of the full plate.",
+    portionAdvice: message,
     confidence: "low",
-    items: [],
-    macros: {
-      carbohydrates: "unknown",
-      protein: "unknown",
-      fat: "unknown",
-      fibre: "unknown",
-    },
-    clinicalNotes: {
-      sugarLoad: "unknown",
-      diabetesCaution: "Unable to assess from this image.",
-      weightLossAdvice: "Please upload a clearer image.",
-    },
   });
 }
 
 export async function POST(req: Request) {
   try {
     if (!process.env.OPENAI_API_KEY) {
-      return safeFallback("Missing OpenAI API key");
+      return fallback("Missing OpenAI API key in Vercel environment variables.");
     }
 
     const formData = await req.formData();
     const file = formData.get("image") as File | null;
 
     if (!file) {
-      return safeFallback("No image uploaded");
+      return fallback("No image uploaded.");
     }
 
     if (file.size > 5_000_000) {
-      return safeFallback("Image too large. Please upload an image under 5MB.");
+      return fallback("Image too large. Please upload an image under 5MB.");
     }
 
     const bytes = await file.arrayBuffer();
@@ -55,57 +42,39 @@ export async function POST(req: Request) {
     const prompt = `
 You are a clinical nutrition assistant.
 
-Analyze the food image.
+Analyze this food image.
 
-Return ONLY valid JSON. No markdown.
+Return ONLY valid JSON:
 
-Use this structure:
 {
   "calories": number,
-  "description": "specific food description, including quantity if visible",
-  "foodGroup": "specific food group, e.g. Fruit, Protein, Carbohydrate, Mixed meal",
-  "portionAdvice": "short practical patient-friendly advice",
-  "confidence": "low, medium or high",
-  "items": [
-    {
-      "name": "food name",
-      "quantity": number,
-      "estimatedCaloriesPerItem": number,
-      "totalCalories": number
-    }
-  ],
-  "macros": {
-    "carbohydrates": "low, moderate or high",
-    "protein": "low, moderate or high",
-    "fat": "low, moderate or high",
-    "fibre": "low, moderate or high"
-  },
-  "clinicalNotes": {
-    "sugarLoad": "low, moderate or high",
-    "diabetesCaution": "short note",
-    "weightLossAdvice": "short note"
-  }
+  "description": "specific visible food and quantity",
+  "foodGroup": "Fruit, Protein, Carbohydrate, Vegetables, Fat, or Mixed meal",
+  "portionAdvice": "short clinical patient-friendly advice",
+  "confidence": "low, medium or high"
 }
 
 Rules:
 - Count visible items where possible.
-- Example: 6 oranges should be described as "6 whole oranges", foodGroup "Fruit", calories around 360-420.
-- Do not say "Mixed meal" if the image shows one type of food.
-- If unsure, estimate and set confidence to low.
+- If image shows 6 oranges, return around 360-420 calories.
+- Do not say Mixed meal if it is one food type.
+- No markdown.
 `;
 
-    const response = await openai.responses.create({
+    const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      input: [
+      temperature: 0.1,
+      response_format: { type: "json_object" },
+      messages: [
         {
           role: "user",
           content: [
             {
-              type: "input_text",
+              type: "text",
               text: prompt,
             },
             {
-              type: "input_image",
+              type: "image_url",
               image_url: {
                 url: `data:${mimeType};base64,${base64}`,
               },
@@ -113,50 +82,28 @@ Rules:
           ],
         },
       ],
-    } as any);
+    });
 
-    const raw = response.output_text || "";
+    const raw = response.choices[0]?.message?.content || "";
 
     let parsed: any;
 
     try {
-      const cleaned = raw
-        .replace(/```json/g, "")
-        .replace(/```/g, "")
-        .trim();
-
-      parsed = JSON.parse(cleaned);
-    } catch (err) {
-      console.error("JSON parse failed:", err);
-      console.error("Raw response:", raw);
-
-      return safeFallback("AI response could not be parsed");
+      parsed = JSON.parse(raw);
+    } catch {
+      return fallback("AI response could not be parsed.");
     }
 
     return NextResponse.json({
       calories: Number(parsed.calories) || 0,
       description: parsed.description || "Food detected",
       foodGroup: parsed.foodGroup || "Unknown",
-      portionAdvice:
-        parsed.portionAdvice ||
-        "Use balanced portions and avoid oversized servings.",
+      portionAdvice: parsed.portionAdvice || "Use balanced portions.",
       confidence: parsed.confidence || "medium",
-      items: Array.isArray(parsed.items) ? parsed.items : [],
-      macros: parsed.macros || {
-        carbohydrates: "unknown",
-        protein: "unknown",
-        fat: "unknown",
-        fibre: "unknown",
-      },
-      clinicalNotes: parsed.clinicalNotes || {
-        sugarLoad: "unknown",
-        diabetesCaution: "Use caution if diabetic or insulin resistant.",
-        weightLossAdvice: "Monitor total calorie intake.",
-      },
     });
   } catch (error: any) {
-    console.error("Image analysis error:", error);
+    console.error("AI ERROR:", error);
 
-    return safeFallback(error?.message || "AI request failed");
+    return fallback(error?.message || "AI request failed");
   }
 }
