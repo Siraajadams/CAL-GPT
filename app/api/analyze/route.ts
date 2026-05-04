@@ -55,10 +55,7 @@ Notes: ${notes || "none"}
     });
 
     // 🔑 Extract AI output safely
-    const outputText =
-      response.output_text ||
-      response.output?.[0]?.content?.[0]?.text ||
-      "";
+   const outputText = response.output_text || "";
 
     let parsed;
 
