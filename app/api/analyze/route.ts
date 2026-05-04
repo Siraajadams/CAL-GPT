@@ -1,54 +1,63 @@
 import OpenAI from "openai";
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 export async function POST(req: Request) {
   try {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY is missing");
+    }
+
     const { image, notes } = await req.json();
 
-    const response = await openai.chat.completions.create({
+    if (!image) {
+      throw new Error("No image received");
+    }
+
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    const response = await openai.responses.create({
       model: "gpt-4o-mini",
-      messages: [
+      input: [
         {
           role: "user",
           content: [
             {
-              type: "text",
-              text: `Analyze this meal image. Return ONLY JSON with:
+              type: "input_text",
+              text: `Analyze this meal image and return ONLY valid JSON:
 {
   "description": "short meal description",
-  "calories": number,
-  "foodGroups": ["Carbohydrate","Protein / meat","Vegetables","Sugar / dessert","Fat / oils"],
-  "recommendations": "short health recommendation"
+  "calories": 0,
+  "foodGroups": ["Carbohydrate", "Protein / meat", "Vegetables", "Sugar / dessert", "Fat / oils"],
+  "recommendations": "short practical recommendation"
 }
-Notes from user: ${notes || ""}`,
+
+User notes: ${notes || ""}`,
             },
             {
-              type: "image_url",
-              image_url: {
-                url: image,
-              },
+              type: "input_image",
+              image_url: image,
+              detail: "low",
             },
           ],
         },
       ],
     });
 
-    const text = response.choices[0]?.message?.content || "{}";
+    const text = response.output_text || "{}";
     const cleaned = text.replace(/```json|```/g, "").trim();
     const data = JSON.parse(cleaned);
 
     return Response.json(data);
-  } catch (error) {
+  } catch (error: any) {
+    console.error("OPENAI IMAGE ANALYSIS ERROR:", error);
+
     return Response.json(
       {
         description: "Image analysis failed",
-        calories: 520,
-        foodGroups: ["Needs AI image interpretation"],
-        recommendations:
-          "Check that OPENAI_API_KEY is added in Vercel Environment Variables and that the openai package is installed.",
+        calories: 0,
+        foodGroups: ["AI error"],
+        recommendations: error?.message || "Unknown OpenAI error",
       },
       { status: 200 }
     );
