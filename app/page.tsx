@@ -43,6 +43,14 @@ function bmiLabel(bmi: string) {
   if (n < 18.5) return "Underweight range"; if (n < 25) return "Healthy range"; if (n < 30) return "Overweight range";
   return "Obese range";
 }
+function sleepCategoryToHours(value: string | number) {
+  const text = String(value || "").toLowerCase();
+  if (text.includes("less than 5")) return 4.5;
+  if (text.includes("5 to 7")) return 6;
+  if (text.includes("over 8")) return 8.5;
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
 function estimateFoodGroups(notes: string) {
   const text = notes.toLowerCase(); const groups: string[] = [];
   const carbs = ["rice", "pasta", "bread", "potato", "chips", "pap", "oats", "cereal", "noodle", "roti", "wrap"];
@@ -85,7 +93,8 @@ export default function Page() {
   const todayCalories = todayMeals.reduce((s, m) => s + Number(m.calories || 0), 0);
   const totalCalories = meals.reduce((s, m) => s + Number(m.calories || 0), 0);
   const avgDaily = meals.length ? Math.round(totalCalories / Math.max(1, new Set(meals.map((m) => m.date)).size)) : 0;
-  const avgSleep = sleepRecords.length ? (sleepRecords.reduce((s, r) => s + Number(r.hours || 0), 0) / sleepRecords.length).toFixed(1) : profile.sleepAverage;
+  const avgSleepHours = sleepRecords.length ? (sleepRecords.reduce((s, r) => s + sleepCategoryToHours(r.hours), 0) / sleepRecords.length).toFixed(1) : String(sleepCategoryToHours(profile.sleepAverage));
+  const avgSleep = `${avgSleepHours} hours/night`;
 
   function saveEHR(nextProfile = profile, nextMeals = meals, nextWeights = weights, nextSleep = sleepRecords, nextActivity = activityUpdates) {
     localStorage.setItem("calgpt_ehr", JSON.stringify({ profile: nextProfile, meals: nextMeals, weights: nextWeights, sleepRecords: nextSleep, activityUpdates: nextActivity }));
@@ -96,7 +105,7 @@ export default function Page() {
     if (profile.password !== profile.confirmPassword) return alert("Passwords do not match.");
     const nextProfile = { ...profile, age: calcAge(profile.dob), bmi, createdAt: new Date().toISOString() };
     const firstWeight = [{ date: today, weight: Number(profile.weight || 0), bmi: Number(calcBMI(profile.weight, profile.height) || 0) }];
-    const firstSleep = [{ date: today, hours: profile.sleepAverage }];
+    const firstSleep = [{ date: today, hours: profile.sleepAverage, value: sleepCategoryToHours(profile.sleepAverage) }];
     setProfile(nextProfile); setWeights(firstWeight); setSleepRecords(firstSleep); saveEHR(nextProfile, meals, firstWeight, firstSleep, activityUpdates); setScreen("dashboard");
   }
   function loginUser() {
@@ -151,7 +160,7 @@ export default function Page() {
   }
   function addSleep() {
     const hours = prompt("Select sleep category: Less than 5 hours per night, 5 to 7 hours per night, or Over 8 hours per night", profile.sleepAverage); if (!hours) return;
-    const nextSleep = [...sleepRecords, { date: today, hours }];
+    const nextSleep = [...sleepRecords, { date: today, hours, value: sleepCategoryToHours(hours) }];
     const nextProfile = { ...profile, sleepAverage: hours };
     setSleepRecords(nextSleep); setProfile(nextProfile); saveEHR(nextProfile, meals, weights, nextSleep, activityUpdates);
   }
@@ -183,6 +192,13 @@ export default function Page() {
     return <div style={{ display: "flex", alignItems: "end", gap: 8, height: 170, paddingTop: 12 }}>{clean.map((d, i) => <div key={i} style={{ flex: 1, textAlign: "center" }}><b style={{ fontSize: 11 }}>{d[key]}{suffix}</b><div style={{ height: Math.max(18, (Number(d[key]) / max) * 115), background: color, borderRadius: "14px 14px 6px 6px", boxShadow: "0 10px 18px rgba(0,0,0,.12)" }} /><small style={{ fontSize: 10 }}>{String(d.date).slice(5)}</small></div>)}</div>;
   };
 
+  const sleepGraph = () => {
+    const clean = sleepRecords.map((r) => ({ ...r, value: sleepCategoryToHours(r.hours) })).filter((r) => r.value > 0).slice(-7);
+    if (!clean.length) return <p>No tracking data yet.</p>;
+    const max = Math.max(...clean.map((r) => r.value));
+    return <div style={{ display: "flex", alignItems: "end", gap: 8, height: 170, paddingTop: 12 }}>{clean.map((d, i) => <div key={i} style={{ flex: 1, textAlign: "center" }}><b style={{ fontSize: 11 }}>{d.value}h</b><div style={{ height: Math.max(18, (d.value / max) * 115), background: "linear-gradient(180deg,#38bdf8,#0369a1)", borderRadius: "14px 14px 6px 6px", boxShadow: "0 10px 18px rgba(0,0,0,.12)" }} /><small style={{ fontSize: 10 }}>{String(d.date).slice(5)}</small></div>)}</div>;
+  };
+
   return (
     <main style={{ minHeight: "100vh", background: "radial-gradient(circle at top left,#bbf7d0,#f1f5f9 35%,#e0f2fe)", color: "#0f172a", fontFamily: "Arial, sans-serif" }}>
       <div style={{ maxWidth: 480, margin: "0 auto", paddingBottom: 94 }}>
@@ -194,7 +210,7 @@ export default function Page() {
 
         {screen === "dashboard" && <section style={{ padding: 20 }}><div style={{ ...cardStyle, background: "linear-gradient(135deg,#061115,#064e3b)", color: "white" }}><p style={{ color: "#bbf7d0", fontWeight: 900 }}>Home</p><h1 style={{ fontSize: 36 }}>{profile.fullName || "Patient"}</h1><p>{profile.goal} • BMI {bmi || "--"} • Sleep: {avgSleep}</p><button style={{ ...buttonStyle, background: "white", color: "#0f172a", marginTop: 14, boxShadow: "none" }} onClick={logout}>Logout</button></div><div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}><div style={cardStyle}><p>Today’s Calories</p><h2 style={{ fontSize: 40, color: "#22c55e" }}>{todayCalories}</h2><p>kcal</p></div><div style={cardStyle}><p>Meals Today</p><h2 style={{ fontSize: 40 }}>{todayMeals.length}</h2><p>records</p></div></div><div style={cardStyle}><h2>Today’s food diary</h2>{todayMeals.length === 0 ? <p>No meals captured today.</p> : todayMeals.map((m) => <div key={m.id} style={{ borderBottom: "1px solid #e2e8f0", padding: "10px 0" }}><b>{m.category}</b> • {m.calories} kcal<br /><small>{m.time} • {m.foodGroups?.join(", ")}</small></div>)}</div><div style={{ ...cardStyle, background: "#ecfdf5" }}><h2>AI Insight</h2><p>{aiStatus}</p></div></section>}
 
-        {screen === "ehr" && <section style={{ padding: 20 }}><h1 style={{ fontSize: 36 }}>Patient EHR</h1><div style={cardStyle}><b>Name:</b> {profile.fullName}<br /><b>DOB:</b> {profile.dob}<br /><b>Mobile:</b> {profile.dialCode} {profile.mobile}<br /><b>Address:</b> {profile.address}, {profile.country}</div><div style={cardStyle}><b>Conditions:</b> {profile.conditions || "None recorded"}<br /><b>Medication:</b> {profile.medications || "None recorded"}<br /><b>Allergies:</b> {profile.allergies || "None recorded"}<br /><b>Exercise:</b> {profile.exerciseHistory}<br /><b>Eating habits:</b> {profile.eatingHabits}<br /><b>Water intake:</b> {profile.waterIntake}<br /><button style={{ ...buttonStyle, marginTop: 14 }} onClick={updateActivity}>Update activity</button></div><div style={cardStyle}><h2>Weight tracking</h2><p>Date-stamped longitudinal weight changes.</p>{barGraph(weights, "weight", "linear-gradient(180deg,#22c55e,#15803d)", "kg")}</div><div style={cardStyle}><h2>BMI tracking</h2><p>Date-stamped BMI changes.</p>{barGraph(weights, "bmi", "linear-gradient(180deg,#0f172a,#334155)")}</div><div style={cardStyle}><h2>Weekly sleep tracker</h2><p>Average sleep per night: <b>{avgSleep}</b></p>{barGraph(sleepRecords, "hours", "linear-gradient(180deg,#38bdf8,#0369a1)", "h")}<button style={{ ...buttonStyle, marginTop: 14, background: "linear-gradient(135deg,#0284c7,#38bdf8)" }} onClick={addSleep}>Add sleep update</button></div><button style={buttonStyle} onClick={updateWeight}>Add weight update</button></section>}
+        {screen === "ehr" && <section style={{ padding: 20 }}><h1 style={{ fontSize: 36 }}>Patient EHR</h1><div style={cardStyle}><b>Name:</b> {profile.fullName}<br /><b>DOB:</b> {profile.dob}<br /><b>Mobile:</b> {profile.dialCode} {profile.mobile}<br /><b>Address:</b> {profile.address}, {profile.country}</div><div style={cardStyle}><b>Conditions:</b> {profile.conditions || "None recorded"}<br /><b>Medication:</b> {profile.medications || "None recorded"}<br /><b>Allergies:</b> {profile.allergies || "None recorded"}<br /><b>Exercise:</b> {profile.exerciseHistory}<br /><b>Eating habits:</b> {profile.eatingHabits}<br /><b>Water intake:</b> {profile.waterIntake}<br /><label style={{ ...labelStyle, marginTop: 14 }}>Update activity<select style={inputStyle} value={profile.exerciseHistory} onChange={(e) => { const activity = e.target.value; const nextActivity = [...activityUpdates, { date: today, activity }]; const nextProfile = { ...profile, exerciseHistory: activity }; setActivityUpdates(nextActivity); setProfile(nextProfile); saveEHR(nextProfile, meals, weights, sleepRecords, nextActivity); }}>{exerciseOptions.map((x) => <option key={x}>{x}</option>)}</select></label></div><div style={cardStyle}><h2>Weight tracking</h2><p>Date-stamped longitudinal weight changes.</p>{barGraph(weights, "weight", "linear-gradient(180deg,#22c55e,#15803d)", "kg")}</div><div style={cardStyle}><h2>BMI tracking</h2><p>Date-stamped BMI changes.</p>{barGraph(weights, "bmi", "linear-gradient(180deg,#0f172a,#334155)")}</div><div style={cardStyle}><h2>Weekly sleep tracker</h2><p>Average sleep per night: <b>{avgSleep}</b></p>{sleepGraph()}<label style={labelStyle}>Update sleep<select style={inputStyle} value={profile.sleepAverage} onChange={(e) => { const hours = e.target.value; const nextSleep = [...sleepRecords, { date: today, hours, value: sleepCategoryToHours(hours) }]; const nextProfile = { ...profile, sleepAverage: hours }; setProfile(nextProfile); setSleepRecords(nextSleep); saveEHR(nextProfile, meals, weights, nextSleep, activityUpdates); }}>{sleepOptions.map((x) => <option key={x}>{x}</option>)}</select></label></div><button style={buttonStyle} onClick={updateWeight}>Add weight update</button></section>}
 
         {screen === "scanner" && <section style={{ padding: 20 }}><h1 style={{ fontSize: 36 }}>Meal Photo Scanner</h1><div style={cardStyle}><label style={labelStyle}>Meal category<select style={inputStyle} value={mealForm.category} onChange={(e) => setMealForm({ ...mealForm, category: e.target.value })}><option>Breakfast</option><option>Lunch</option><option>Dinner</option><option>Snack</option></select></label><label style={labelStyle}>Estimated calories<input style={inputStyle} value={mealForm.calories} onChange={(e) => setMealForm({ ...mealForm, calories: e.target.value })} /></label><label style={labelStyle}>Describe visible food on plate<input style={inputStyle} value={mealForm.notes} onChange={(e) => setMealForm({ ...mealForm, notes: e.target.value, foodGroups: estimateFoodGroups(e.target.value) })} /></label><input type="file" accept="image/*" capture="environment" style={{ ...inputStyle, marginBottom: 12 }} onChange={(e) => handleImage(e.target.files?.[0])} /><button style={{ ...buttonStyle, marginBottom: 16, background: "linear-gradient(135deg,#0f172a,#334155)" }} onClick={submitImageForAI}>Submit image for AI analysis</button><div style={{ background: "linear-gradient(135deg,#f8fafc,#ecfdf5)", borderRadius: 20, padding: 16, marginBottom: 14 }}><b>Food group interpreter:</b><br />{(mealForm.foodGroups.length ? mealForm.foodGroups : estimateFoodGroups(mealForm.notes)).map(pill)}<p style={{ fontSize: 13 }}>{aiStatus}</p></div><button style={buttonStyle} onClick={addMeal}>Save meal to diary</button></div><h2 style={{ marginLeft: 4 }}>Daily food diary and meal history</h2>{meals.map((m) => <div style={cardStyle} key={m.id}><h3>{m.category} • {m.calories} kcal</h3><p>{m.date} at {m.time}</p><p>{m.notes}</p><p><b>Detected groups:</b> {m.foodGroups?.join(", ")}</p></div>)}</section>}
 
