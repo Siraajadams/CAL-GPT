@@ -128,67 +128,97 @@ export default function Page() {
   }
   function handleImage(file: File | undefined) {
     if (!file) return;
+
     const reader = new FileReader();
-    reader.onload = () => {
-      const imageBase64 = String(reader.result);
-      setMealForm((p) => ({ ...p, imageName: file.name, imageBase64 }));
-      setAiStatus("Image uploaded. Tap Submit image for OpenAI Vision analysis.");
+
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = String(event.target?.result || "");
+
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxWidth = 800;
+        const scale = Math.min(1, maxWidth / img.width);
+
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+
+        const ctx = canvas.getContext("2d");
+        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.6);
+
+        setMealForm((p) => ({
+          ...p,
+          imageName: file.name,
+          imageBase64: compressedBase64,
+        }));
+
+        setAiStatus("Image compressed and ready. Tap Submit image for AI analysis.");
+      };
+
+      img.onerror = () => {
+        setAiStatus("Image upload failed. Please try another photo.");
+      };
     };
+
     reader.readAsDataURL(file);
   }
 
   async function submitImageForAI() {
-  try {
-    if (!mealForm.imageBase64) {
-      alert("Please upload or take a meal photo first.");
-      return;
-    }
-
-    setAiStatus("Analyzing your meal with OpenAI Vision...");
-
-    const res = await fetch("/api/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        image: mealForm.imageBase64,
-        notes: mealForm.notes,
-      }),
-    });
-
-    const raw = await res.text();
-
-    let data: any;
     try {
-      data = JSON.parse(raw);
-    } catch {
-      throw new Error(raw.slice(0, 120));
+      if (!mealForm.imageBase64) {
+        alert("Please upload or take a meal photo first.");
+        return;
+      }
+
+      setAiStatus("Analyzing your meal with OpenAI Vision...");
+
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image: mealForm.imageBase64,
+          notes: mealForm.notes,
+        }),
+      });
+
+      const data = await res.json();
+      console.log("AI RESPONSE:", data);
+
+      if (!res.ok || !data || data.description === "Image analysis failed" || !data.description) {
+        setMealForm((p) => ({
+          ...p,
+          notes: data?.description || "AI could not analyze image",
+          calories: String(data?.calories || p.calories || 520),
+          foodGroups: data?.foodGroups?.length ? data.foodGroups : ["Needs AI image interpretation"],
+        }));
+        setAiStatus(`AI analysis failed: ${data?.recommendations || "Check /api/analyze, image format, API key, or Vercel logs."}`);
+        return;
+      }
+
+      setMealForm((p) => ({
+        ...p,
+        calories: String(data.calories || p.calories || 520),
+        notes: data.description,
+        foodGroups: data.foodGroups?.length ? data.foodGroups : ["Carbohydrate", "Protein / meat", "Vegetables"],
+      }));
+
+      setAiStatus(
+        data.recommendations
+          ? `OpenAI Vision analysis completed. Recommendation: ${data.recommendations}`
+          : "OpenAI Vision analysis completed. Review, then save meal to diary."
+      );
+    } catch (error: any) {
+      console.error("AI FRONTEND ERROR:", error);
+      setMealForm((p) => ({
+        ...p,
+        notes: "AI request failed",
+        foodGroups: ["Needs AI image interpretation"],
+      }));
+      setAiStatus(`AI request failed: ${error?.message || "Unknown frontend error"}`);
     }
-
-    setMealForm((p) => ({
-      ...p,
-      calories: String(data.calories || p.calories || 520),
-      notes: data.description || "AI could not analyze image",
-      foodGroups:
-        data.foodGroups?.length
-          ? data.foodGroups
-          : ["Needs AI image interpretation"],
-    }));
-
-    setAiStatus(
-      data.recommendations
-        ? `OpenAI analysis completed. Recommendation: ${data.recommendations}`
-        : "OpenAI analysis completed. Review, then save meal to diary."
-    );
-  } catch (error: any) {
-    setMealForm((p) => ({
-      ...p,
-      notes: "AI request failed",
-      foodGroups: ["Needs AI image interpretation"],
-    }));
-
-    setAiStatus(`AI request failed: ${error?.message || "Unknown error"}`);
   }
-}
   function addMeal() {
     const foodGroups = mealForm.foodGroups.length ? mealForm.foodGroups : estimateFoodGroups(mealForm.notes);
     const record = { id: Date.now(), date: today, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), category: mealForm.category, calories: Number(mealForm.calories || 0), notes: mealForm.notes, image: mealForm.imageName, foodGroups };
