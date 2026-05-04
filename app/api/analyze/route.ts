@@ -1,74 +1,40 @@
-import OpenAI from "openai";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-export async function POST(req: Request) {
+const submitImageForAI = async () => {
   try {
-    const { image, notes } = await req.json();
+    setAiStatus("Submitting image to OpenAI...");
 
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error("OPENAI_API_KEY is missing in Vercel Environment Variables");
-    }
-
-    if (!image) {
-      throw new Error("No image received from frontend");
-    }
-
-    const response = await openai.responses.create({
-      model: "gpt-4o-mini",
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: `Analyze this food photo.
-
-Return ONLY valid JSON in this exact structure:
-
-{
-  "description": "short description of the meal",
-  "calories": 0,
-  "foodGroups": ["Carbohydrate", "Protein / meat", "Vegetables", "Sugar / dessert", "Fat / oils"],
-  "recommendations": "short practical nutrition advice"
-}
-
-User notes: ${notes || ""}`,
-            },
-            {
-              type: "input_image",
-              image_url: image,
-              detail: "low",
-            },
-          ],
-        },
-      ],
+    const res = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image: mealForm.imageBase64,
+        notes: mealForm.notes,
+      }),
     });
 
-    const raw = response.output_text || "{}";
-    const cleaned = raw.replace(/```json|```/g, "").trim();
-    const data = JSON.parse(cleaned);
+    const data = await res.json();
 
-    return Response.json({
-      description: data.description || notes || "Meal analyzed",
-      calories: data.calories || 520,
-      foodGroups: data.foodGroups || ["Needs AI image interpretation"],
-      recommendations:
-        data.recommendations ||
-        "Balance protein, vegetables and carbohydrates. Watch portion size.",
-    });
+    // ❌ If OpenAI failed — SHOW REAL ERROR
+    if (data.description === "Image analysis failed") {
+      setAiStatus(`OpenAI error: ${data.recommendations}`);
+      return;
+    }
+
+    // ✅ Update UI
+    setMealForm((p) => ({
+      ...p,
+      calories: String(data.calories || p.calories),
+      notes: data.description || p.notes,
+      foodGroups: data.foodGroups || [],
+    }));
+
+    setAiStatus(
+      data.recommendations
+        ? `Analysis complete: ${data.recommendations}`
+        : "Analysis complete"
+    );
   } catch (error: any) {
-    console.error("OPENAI IMAGE ANALYSIS ERROR:", error?.message || error);
-
-    return Response.json({
-      description: "Image analysis failed",
-      calories: 520,
-      foodGroups: ["Needs AI image interpretation"],
-      recommendations:
-        error?.message ||
-        "OpenAI analysis failed. Check API key, image format and deployment logs.",
-    });
+    setAiStatus(
+      `OpenAI error: ${error?.message || "Unknown error"}`
+    );
   }
-}
+};
