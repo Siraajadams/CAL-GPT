@@ -94,28 +94,26 @@ Rules:
 - If unsure, estimate and set confidence to low.
 `;
 
-    const response = await openai.responses.create({
-      model: "gpt-4o",
-      input: [
+const response = await openai.responses.create({
+  model: "gpt-4o",
+  input: [
+    {
+      role: "user",
+      content: [
         {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: prompt,
-            },
-            {
-              type: "input_image",
-              image_url: `data:${mimeType};base64,${base64}`,
-            },
-          ],
+          type: "input_text",
+          text: prompt,
+        },
+        {
+          type: "input_image",
+          image_url: {
+            url: `data:${mimeType};base64,${base64}`,
+          },
         },
       ],
-    });
-
-    const raw = response.output_text || "";
-
-    let parsed: any;
+    },
+  ],
+} as any);
 
     try {
       const cleaned = raw
