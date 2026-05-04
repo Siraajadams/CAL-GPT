@@ -26,11 +26,11 @@ export async function POST(req: Request) {
               type: "input_text",
               text: `Analyze this meal photo.
 
-Return a short plain-English response with:
-1. Meal description
+Return:
+1. Short meal description
 2. Estimated calories
 3. Food groups
-4. Health recommendation
+4. Short health recommendation
 
 User notes: ${notes || "none"}`,
             },
@@ -44,16 +44,7 @@ User notes: ${notes || "none"}`,
       ],
     });
 
-    let text = "";
-
-    try {
-      text =
-        response.output?.[0]?.content?.[0]?.text ||
-        response.output_text ||
-        "No response from AI";
-    } catch {
-      text = "Failed to parse AI response";
-    }
+    const text = response.output_text || "No response from AI";
 
     return Response.json({
       description: text,
