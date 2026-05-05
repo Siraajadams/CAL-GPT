@@ -14,6 +14,7 @@ function fallback(message = "AI request failed") {
     description: "Image analysis failed",
     foodGroup: "Upload a clearer food image",
     portionAdvice: message,
+    advice: message,
     confidence: "low",
   });
 }
@@ -38,19 +39,23 @@ export async function POST(req: Request) {
     const bytes = await file.arrayBuffer();
     const base64 = Buffer.from(bytes).toString("base64");
     const mimeType = file.type || "image/jpeg";
+    const imageUrl = `data:${mimeType};base64,${base64}`;
 
     const prompt = `
-You are a clinical nutrition assistant.
+You are a clinical nutrition AI.
 
 Analyze this food image.
 
-Return ONLY valid JSON:
+Return ONLY valid JSON. No markdown.
+
+Use this exact structure:
 
 {
   "calories": number,
   "description": "specific visible food and quantity",
   "foodGroup": "Fruit, Protein, Carbohydrate, Vegetables, Fat, or Mixed meal",
   "portionAdvice": "short clinical patient-friendly advice",
+  "advice": "short clinical patient-friendly advice",
   "confidence": "low, medium or high"
 }
 
@@ -58,7 +63,7 @@ Rules:
 - Count visible items where possible.
 - If image shows 6 oranges, return around 360-420 calories.
 - Do not say Mixed meal if it is one food type.
-- No markdown.
+- If uncertain, estimate and set confidence to low.
 `;
 
     const response = await openai.chat.completions.create({
@@ -76,7 +81,7 @@ Rules:
             {
               type: "image_url",
               image_url: {
-                url: `data:${mimeType};base64,${base64}`,
+                url: imageUrl,
               },
             },
           ],
@@ -89,16 +94,27 @@ Rules:
     let parsed: any;
 
     try {
-      parsed = JSON.parse(raw);
+      const cleaned = raw
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .trim();
+
+      parsed = JSON.parse(cleaned);
     } catch {
       return fallback("AI response could not be parsed.");
     }
+
+    const advice =
+      parsed.portionAdvice ||
+      parsed.advice ||
+      "Use balanced portions and avoid oversized servings.";
 
     return NextResponse.json({
       calories: Number(parsed.calories) || 0,
       description: parsed.description || "Food detected",
       foodGroup: parsed.foodGroup || "Unknown",
-      portionAdvice: parsed.portionAdvice || "Use balanced portions.",
+      portionAdvice: advice,
+      advice,
       confidence: parsed.confidence || "medium",
     });
   } catch (error: any) {
