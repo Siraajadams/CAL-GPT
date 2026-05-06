@@ -3,8 +3,13 @@ import OpenAI from "openai";
 
 export const runtime = "nodejs";
 
+const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
+
+console.log("KEY EXISTS:", Boolean(apiKey));
+console.log("KEY LENGTH:", apiKey?.length || 0);
+
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey,
 });
 
 export async function POST(req: Request) {
