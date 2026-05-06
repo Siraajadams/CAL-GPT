@@ -1,4 +1,6 @@
-"use client";
+from pathlib import Path
+
+content = r'''"use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 
@@ -116,7 +118,35 @@ function estimateFoodGroups(notes: string) {
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
+
+    reader.onload = () => {
+      const img = new Image();
+
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+
+        const maxWidth = 800;
+        const scale = Math.min(1, maxWidth / img.width);
+
+        canvas.width = img.width * scale;
+        canvas.height = img.height * scale;
+
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          reject(new Error("Image compression failed"));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.55);
+        resolve(compressedBase64);
+      };
+
+      img.onerror = () => reject(new Error("Could not load image"));
+      img.src = reader.result as string;
+    };
+
     reader.onerror = (error) => reject(error);
     reader.readAsDataURL(file);
   });
@@ -249,7 +279,7 @@ export default function Page() {
   async function handleImage(file: File | undefined) {
     if (!file) return;
     try {
-      setAiStatus("Preparing image...");
+      setAiStatus("Preparing and compressing image...");
       setMealForm((p) => ({
         ...p,
         imageName: file.name,
@@ -296,13 +326,38 @@ export default function Page() {
       const res = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image: mealForm.imageBase64 }),
+        body: JSON.stringify({
+          image: mealForm.imageBase64,
+          question:
+            "Estimate the calories, identify the visible food, food group, portion advice and confidence level.",
+        }),
       });
 
-      const data = await res.json();
+      const text = await res.text();
+
+      let data: any = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        console.error("INVALID JSON RESPONSE:", text);
+
+        setMealForm((p) => ({
+          ...p,
+          notes: "Image analysis failed",
+          calories: "",
+          foodGroups: ["Analysis failed"],
+          portionAdvice:
+            text || "Server returned an invalid response. Image may still be too large.",
+          confidence: "low",
+        }));
+
+        setAiStatus("AI request failed");
+        return;
+      }
+
       console.log("AI RESPONSE:", data);
 
-      if (!res.ok || !data.success) {
+      if (!res.ok || data.error) {
         setMealForm((p) => ({
           ...p,
           notes: "Image analysis failed",
@@ -311,11 +366,18 @@ export default function Page() {
           portionAdvice: data?.error || "Please try again with a clearer image.",
           confidence: "low",
         }));
+
         setAiStatus("AI request failed");
         return;
       }
 
-      const resultText = String(data.result || data.description || "AI analysis completed");
+      const resultText = String(
+        data.result ||
+          data.description ||
+          data.message ||
+          "AI analysis completed"
+      );
+
       const extractedCalories = parseCaloriesFromText(resultText);
 
       setMealForm((p) => ({
@@ -323,13 +385,17 @@ export default function Page() {
         notes: data.description || resultText,
         calories: data.calories ? String(data.calories) : extractedCalories,
         foodGroups: data.foodGroup ? [data.foodGroup] : estimateFoodGroups(resultText),
-        portionAdvice: data.portionAdvice || "Review the AI description and edit calories manually if needed.",
+        portionAdvice:
+          data.portionAdvice ||
+          resultText ||
+          "Review the AI description and edit calories manually if needed.",
         confidence: data.confidence || "medium",
       }));
 
       setAiStatus("AI analysis completed");
     } catch (error: any) {
       console.error("AI ERROR:", error);
+
       setMealForm((p) => ({
         ...p,
         notes: "Image analysis failed",
@@ -338,6 +404,7 @@ export default function Page() {
         portionAdvice: error?.message || "Please check your connection and try again.",
         confidence: "low",
       }));
+
       setAiStatus("AI request failed");
     } finally {
       setAiLoading(false);
@@ -809,3 +876,8 @@ export default function Page() {
     </main>
   );
 }
+'''
+
+path = Path("/mnt/data/page.tsx")
+path.write_text(content, encoding="utf-8")
+print(f"Created {path} ({len(content)} characters)")
