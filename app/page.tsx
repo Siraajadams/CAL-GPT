@@ -125,7 +125,7 @@ function fileToBase64(file: File): Promise<string> {
       img.onload = () => {
         const canvas = document.createElement("canvas");
 
-        const maxWidth = 800;
+        const maxWidth = 500;
         const scale = Math.min(1, maxWidth / img.width);
 
         canvas.width = img.width * scale;
@@ -139,7 +139,7 @@ function fileToBase64(file: File): Promise<string> {
 
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.55);
+        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.35);
         resolve(compressedBase64);
       };
 
