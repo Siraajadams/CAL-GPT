@@ -365,8 +365,8 @@ export default function Page() {
       img.onload = () => {
         const canvas = document.createElement("canvas");
 
-        // Aggressive compression to avoid Vercel FUNCTION_PAYLOAD_TOO_LARGE
-        const maxWidth = 400;
+        // Balanced compression: clear enough for AI, still small enough for Vercel
+        const maxWidth = 900;
         const scale = Math.min(1, maxWidth / img.width);
 
         canvas.width = Math.round(img.width * scale);
@@ -375,7 +375,7 @@ export default function Page() {
         const ctx = canvas.getContext("2d");
         ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.4);
+        const compressedBase64 = canvas.toDataURL("image/jpeg", 0.75);
 
         setMealForm((p) => ({
           ...p,
@@ -414,18 +414,33 @@ export default function Page() {
         body: formData,
       });
 
-      const data = await res.json();
+      const rawText = await res.text();
+      let data: any = {};
 
-      if (!res.ok || data.error) {
+      try {
+        data = rawText ? JSON.parse(rawText) : {};
+      } catch {
+        data = {
+          error: rawText || "Invalid server response from /api/analyze",
+          description: "Image analysis failed",
+          foodGroup: "Analysis failed",
+          portionAdvice: rawText || "Server returned an invalid response.",
+          confidence: "low",
+        };
+      }
+
+      if (!res.ok || data.error || data.success === false) {
         setMealForm((p) => ({
           ...p,
-          notes: data.description || "Image analysis failed",
+          notes: data.description || data.result || "Image analysis failed",
           calories: "",
           foodGroups: data.foodGroup
             ? [data.foodGroup]
             : ["Upload a clearer food image"],
           portionAdvice:
             data.portionAdvice ||
+            data.advice ||
+            data.error ||
             "Please try again with a clear photo of the full plate.",
           confidence: data.confidence || "low",
           macros: { protein: 0, carbs: 0, fat: 0, fibre: 0, sugar: 0, sodium: 0 },
@@ -435,11 +450,15 @@ export default function Page() {
         return;
       }
 
+      const aiDescription = data.description || data.result || "";
+
       const groups = Array.isArray(data.foodGroups)
         ? data.foodGroups
         : data.foodGroup
           ? [data.foodGroup]
-          : [];
+          : aiDescription
+            ? estimateFoodGroups(aiDescription)
+            : [];
 
       const nextMacros = {
         protein: Number(data?.macros?.protein) || Number(data?.protein) || 0,
@@ -464,7 +483,7 @@ export default function Page() {
 
       setMealForm((p) => ({
         ...p,
-        notes: data.description || "",
+        notes: aiDescription,
         calories: data.calories ? String(data.calories) : "",
         foodGroups: groups,
         portionAdvice: data.portionAdvice || "",
