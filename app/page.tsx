@@ -1,6 +1,4 @@
-from pathlib import Path
-
-content = r'''"use client";
+"use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 
@@ -876,8 +874,3 @@ export default function Page() {
     </main>
   );
 }
-'''
-
-path = Path("/mnt/data/page.tsx")
-path.write_text(content, encoding="utf-8")
-print(f"Created {path} ({len(content)} characters)")
