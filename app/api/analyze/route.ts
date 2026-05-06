@@ -116,4 +116,45 @@ Return:
 - brief healthy eating advice
 - portion size guidance
 
-Keep response concise
+Keep response concise and clinically useful.
+              `,
+            },
+            {
+              type: "image_url",
+              image_url: {
+                url: image,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const result =
+      response.choices?.[0]?.message?.content ||
+      "Unable to analyze image";
+
+    const calories = extractCalories(result);
+
+    return NextResponse.json({
+      success: true,
+      result,
+      description: result,
+      calories,
+      foodGroup: detectFoodGroup(result),
+      portionAdvice:
+        "Focus on balanced portions and minimise ultra-processed foods.",
+      confidence: "medium",
+    });
+  } catch (error: any) {
+    console.error("ANALYZE ERROR:", error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: error?.message || "AI request failed",
+      },
+      { status: 500 }
+    );
+  }
+}
