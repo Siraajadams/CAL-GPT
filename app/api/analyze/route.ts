@@ -2,40 +2,32 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 export async function POST(req: Request) {
   try {
-    const formData = await req.formData();
-    const file = formData.get("image") as File | null;
+    console.log("KEY:", process.env.OPENAI_API_KEY);
 
-    if (!file) {
-      return NextResponse.json({ error: "No image uploaded" }, { status: 400 });
-    }
+    const formData = await req.formData();
+    const file = formData.get("image") as File;
 
     const bytes = await file.arrayBuffer();
     const base64 = Buffer.from(bytes).toString("base64");
-    const mimeType = file.type || "image/jpeg";
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      response_format: { type: "json_object" },
       messages: [
         {
           role: "user",
           content: [
-            {
-              type: "text",
-              text: `Return only JSON with calories, description, foodGroup, portionAdvice and confidence. Analyze this food image.`,
-            },
+            { type: "text", text: "Estimate calories and describe food." },
             {
               type: "image_url",
               image_url: {
-                url: `data:${mimeType};base64,${base64}`,
+                url: `data:${file.type};base64,${base64}`,
               },
             },
           ],
@@ -43,28 +35,15 @@ export async function POST(req: Request) {
       ],
     });
 
-    const raw = response.choices[0]?.message?.content || "{}";
-    const parsed = JSON.parse(raw);
+    return NextResponse.json({
+      result: response.choices[0].message.content,
+    });
+
+  } catch (err: any) {
+    console.error("ERROR:", err);
 
     return NextResponse.json({
-      calories: parsed.calories || 0,
-      description: parsed.description || "Food detected",
-      foodGroup: parsed.foodGroup || "Unknown",
-      portionAdvice: parsed.portionAdvice || "Use balanced portions.",
-      confidence: parsed.confidence || "medium",
+      error: err.message,
     });
-  } catch (error: any) {
-    console.error("ANALYZE ERROR:", error);
-
-    return NextResponse.json(
-      {
-        error: "AI request failed",
-        description: "Image analysis failed",
-        foodGroup: "Analysis failed",
-        portionAdvice: error?.message || "Please try again.",
-        confidence: "low",
-      },
-      { status: 500 }
-    );
   }
 }
