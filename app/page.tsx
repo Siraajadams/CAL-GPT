@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { supabase } from "../lib/supabase";
 const countries = [
   { name: "South Africa", code: "+27" },
   { name: "United Kingdom", code: "+44" },
@@ -435,7 +434,10 @@ export default function Page() {
       const record: MealRecord = {
         id: Date.now(),
         date: today,
-        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        time: new Date().toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
         category: mealForm.category,
         calories: Number(mealForm.calories || 0),
         notes: cleanNotes,
@@ -446,80 +448,56 @@ export default function Page() {
       };
 
       const nextMeals = [record, ...meals];
+
       setMeals(nextMeals);
       saveEHR(profile, nextMeals, weights, sleepRecords, activityUpdates);
 
       const currentBmi =
         profile.weight && profile.height
           ? Number(profile.weight) /
-            ((Number(profile.height) / 100) * (Number(profile.height) / 100))
+            ((Number(profile.height) / 100) *
+              (Number(profile.height) / 100))
           : null;
 
-      const { error: mealError } = await supabase
-        .from("calgpt_meal_scans")
-        .insert([
-          {
-            user_email: profile.email || "",
-            scan_date: new Date().toISOString(),
-            meal_category: mealForm.category || "Meal",
-            calories: Number(mealForm.calories || 0),
-            food_group: foodGroups.join(", "),
-            description: cleanNotes,
-            portion_advice: cleanAdvice,
-            confidence: cleanConfidence,
-            success: true,
-            model_used: "gpt-4o-mini",
-            estimated_cost: 0.01,
-          },
-        ]);
+      const age = Number(profile.age || calcAge(profile.dob) || 0);
 
-      if (mealError) {
-        console.error("SUPABASE MEAL SAVE ERROR:", mealError);
-        alert(JSON.stringify(mealError));
+      let ageBand = "Unknown";
+
+      if (age > 0 && age < 18) ageBand = "Under 18";
+      else if (age >= 18 && age < 30) ageBand = "18-29";
+      else if (age >= 30 && age < 45) ageBand = "30-44";
+      else if (age >= 45 && age < 60) ageBand = "45-59";
+      else if (age >= 60) ageBand = "60+";
+
+      const mealData = {
+        user_email: profile.email || "",
+        meal_type: mealForm.category || "Meal",
+        calories: Number(mealForm.calories || 0),
+        detected_groups: foodGroups.join(", "),
+        advice: cleanAdvice,
+        confidence: cleanConfidence,
+        visible_food: cleanNotes,
+        gender: profile.gender || "",
+        age_band: ageBand,
+        weight: Number(profile.weight || 0) || null,
+        height: Number(profile.height || 0) || null,
+        bmi: currentBmi || null,
+      };
+
+      const res = await fetch("/api/save-meal", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(mealData),
+      });
+
+      const result = await res.json();
+
+      if (!res.ok || !result.success) {
+        console.error("SERVER SAVE ERROR:", result.error);
+        alert("Server save failed: " + JSON.stringify(result.error));
         return;
-      }
-
-      if (profile.email || profile.fullName) {
-        const { error: profileError } = await supabase
-          .from("calgpt_profiles")
-          .insert([
-            {
-              full_name: profile.fullName || "",
-              email: profile.email || "",
-              gender: profile.gender || "",
-              dob: profile.dob || null,
-              age: Number(profile.age || calcAge(profile.dob) || 0) || null,
-              country: profile.country || "",
-              mobile: `${profile.dialCode || ""} ${profile.mobile || ""}`.trim(),
-              weight: Number(profile.weight || 0) || null,
-              height: Number(profile.height || 0) || null,
-              bmi: currentBmi,
-              goal: profile.goal || "",
-            },
-          ]);
-
-        if (profileError) {
-          console.warn("SUPABASE PROFILE SAVE WARNING:", profileError);
-        }
-      }
-
-      if (profile.weight || currentBmi) {
-        const { error: weightError } = await supabase
-          .from("calgpt_weight_logs")
-          .insert([
-            {
-              user_email: profile.email || "",
-              log_date: new Date().toISOString(),
-              age: Number(profile.age || calcAge(profile.dob) || 0) || null,
-              gender: profile.gender || "",
-              weight: Number(profile.weight || 0) || null,
-              bmi: currentBmi,
-            },
-          ]);
-
-        if (weightError) {
-          console.warn("SUPABASE WEIGHT SAVE WARNING:", weightError);
-        }
       }
 
       alert("Meal saved successfully.");
