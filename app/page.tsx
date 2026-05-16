@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-
+import { supabase } from "@/lib/supabase";
 const countries = [
   { name: "South Africa", code: "+27" },
   { name: "United Kingdom", code: "+44" },
