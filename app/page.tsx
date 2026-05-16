@@ -72,6 +72,17 @@ function calcAge(dob: string) {
   return age > 0 ? String(age) : "";
 }
 
+function cleanAIText(text: string) {
+  return String(text || "")
+    .replace(/#{1,6}\s?/g, "")
+    .replace(/\*\*/g, "")
+    .replace(/[-•]\s/g, "")
+    .replace(/\n/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
 function calcBMI(weight: string | number, height: string | number) {
   const w = Number(weight);
   const h = Number(height) / 100;
@@ -344,8 +355,9 @@ export default function Page() {
           notes: "Image analysis failed",
           calories: "",
           foodGroups: ["Analysis failed"],
-          portionAdvice:
-            text || "Server returned an invalid response. Image may still be too large.",
+          portionAdvice: cleanAIText(
+            text || "Server returned an invalid response. Image may still be too large."
+          ),
           confidence: "low",
         }));
 
@@ -361,7 +373,7 @@ export default function Page() {
           notes: "Image analysis failed",
           calories: "",
           foodGroups: ["Analysis failed"],
-          portionAdvice: data?.error || "Please try again with a clearer image.",
+          portionAdvice: cleanAIText(data?.error || "Please try again with a clearer image."),
           confidence: "low",
         }));
 
@@ -369,25 +381,26 @@ export default function Page() {
         return;
       }
 
-      const resultText = String(
+      const resultText = cleanAIText(String(
         data.result ||
           data.description ||
           data.message ||
           "AI analysis completed"
-      );
+      ));
 
       const extractedCalories = parseCaloriesFromText(resultText);
 
       setMealForm((p) => ({
         ...p,
-        notes: data.description || resultText,
+        notes: cleanAIText(data.description || resultText),
         calories: data.calories ? String(data.calories) : extractedCalories,
-        foodGroups: data.foodGroup ? [data.foodGroup] : estimateFoodGroups(resultText),
-        portionAdvice:
+        foodGroups: data.foodGroup ? [cleanAIText(data.foodGroup)] : estimateFoodGroups(resultText),
+        portionAdvice: cleanAIText(
           data.portionAdvice ||
           resultText ||
-          "Review the AI description and edit calories manually if needed.",
-        confidence: data.confidence || "medium",
+          "Review the AI description and edit calories manually if needed."
+        ),
+        confidence: cleanAIText(data.confidence || "medium"),
       }));
 
       setAiStatus("AI analysis completed");
@@ -399,7 +412,7 @@ export default function Page() {
         notes: "Image analysis failed",
         calories: "",
         foodGroups: ["Analysis failed"],
-        portionAdvice: error?.message || "Please check your connection and try again.",
+        portionAdvice: cleanAIText(error?.message || "Please check your connection and try again."),
         confidence: "low",
       }));
 
@@ -409,23 +422,111 @@ export default function Page() {
     }
   }
 
-  function addMeal() {
-    const foodGroups = mealForm.foodGroups.length ? mealForm.foodGroups : estimateFoodGroups(mealForm.notes);
-    const record: MealRecord = {
-      id: Date.now(),
-      date: today,
-      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      category: mealForm.category,
-      calories: Number(mealForm.calories || 0),
-      notes: mealForm.notes,
-      image: mealForm.imageName,
-      foodGroups,
-      portionAdvice: mealForm.portionAdvice,
-      confidence: mealForm.confidence,
-    };
-    const nextMeals = [record, ...meals];
-    setMeals(nextMeals);
-    saveEHR(profile, nextMeals, weights, sleepRecords, activityUpdates);
+  async function addMeal() {
+    try {
+      const foodGroups = mealForm.foodGroups.length
+        ? mealForm.foodGroups
+        : estimateFoodGroups(mealForm.notes);
+
+      const cleanNotes = cleanAIText(mealForm.notes);
+      const cleanAdvice = cleanAIText(mealForm.portionAdvice);
+      const cleanConfidence = cleanAIText(mealForm.confidence || "medium");
+
+      const record: MealRecord = {
+        id: Date.now(),
+        date: today,
+        time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        category: mealForm.category,
+        calories: Number(mealForm.calories || 0),
+        notes: cleanNotes,
+        image: mealForm.imageName,
+        foodGroups,
+        portionAdvice: cleanAdvice,
+        confidence: cleanConfidence,
+      };
+
+      const nextMeals = [record, ...meals];
+      setMeals(nextMeals);
+      saveEHR(profile, nextMeals, weights, sleepRecords, activityUpdates);
+
+      const currentBmi =
+        profile.weight && profile.height
+          ? Number(profile.weight) /
+            ((Number(profile.height) / 100) * (Number(profile.height) / 100))
+          : null;
+
+      const { error: mealError } = await supabase
+        .from("calgpt_meal_scans")
+        .insert([
+          {
+            user_email: profile.email || "",
+            scan_date: new Date().toISOString(),
+            meal_category: mealForm.category || "Meal",
+            calories: Number(mealForm.calories || 0),
+            food_group: foodGroups.join(", "),
+            description: cleanNotes,
+            portion_advice: cleanAdvice,
+            confidence: cleanConfidence,
+            success: true,
+            model_used: "gpt-4o-mini",
+            estimated_cost: 0.01,
+          },
+        ]);
+
+      if (mealError) {
+        console.error("SUPABASE MEAL SAVE ERROR:", mealError);
+        alert("Meal saved on this device, but Supabase save failed.");
+        return;
+      }
+
+      if (profile.email || profile.fullName) {
+        const { error: profileError } = await supabase
+          .from("calgpt_profiles")
+          .insert([
+            {
+              full_name: profile.fullName || "",
+              email: profile.email || "",
+              gender: profile.gender || "",
+              dob: profile.dob || null,
+              age: Number(profile.age || calcAge(profile.dob) || 0) || null,
+              country: profile.country || "",
+              mobile: `${profile.dialCode || ""} ${profile.mobile || ""}`.trim(),
+              weight: Number(profile.weight || 0) || null,
+              height: Number(profile.height || 0) || null,
+              bmi: currentBmi,
+              goal: profile.goal || "",
+            },
+          ]);
+
+        if (profileError) {
+          console.warn("SUPABASE PROFILE SAVE WARNING:", profileError);
+        }
+      }
+
+      if (profile.weight || currentBmi) {
+        const { error: weightError } = await supabase
+          .from("calgpt_weight_logs")
+          .insert([
+            {
+              user_email: profile.email || "",
+              log_date: new Date().toISOString(),
+              age: Number(profile.age || calcAge(profile.dob) || 0) || null,
+              gender: profile.gender || "",
+              weight: Number(profile.weight || 0) || null,
+              bmi: currentBmi,
+            },
+          ]);
+
+        if (weightError) {
+          console.warn("SUPABASE WEIGHT SAVE WARNING:", weightError);
+        }
+      }
+
+      alert("Meal saved successfully.");
+    } catch (err) {
+      console.error("ADD MEAL ERROR:", err);
+      alert("Unexpected error while saving meal.");
+    }
   }
 
   function updateWeight() {
@@ -795,7 +896,7 @@ export default function Page() {
                 {mealForm.confidence && <p style={{ fontSize: 12, fontWeight: 900, textTransform: "uppercase", color: "#64748b" }}>Confidence: {mealForm.confidence}</p>}
               </div>
 
-              <button style={buttonStyle} onClick={addMeal}>Save meal to diary</button>
+              <button style={buttonStyle} onClick={addMeal}>Save this AI result to meal history</button>
             </div>
 
             <h2 style={{ marginLeft: 4 }}>Daily food diary and meal history</h2>
@@ -803,9 +904,9 @@ export default function Page() {
               <div style={cardStyle} key={m.id}>
                 <h3>{m.category} • {m.calories} kcal</h3>
                 <p>{m.date} at {m.time}</p>
-                <p>{m.notes}</p>
+                <p>{cleanAIText(m.notes)}</p>
                 <p><b>Detected groups:</b> {m.foodGroups?.join(", ")}</p>
-                {m.portionAdvice && <p><b>Portion advice:</b> {m.portionAdvice}</p>}
+                {m.portionAdvice && <p><b>Portion advice:</b> {cleanAIText(m.portionAdvice)}</p>}
                 {m.confidence && <p><b>Confidence:</b> {m.confidence}</p>}
               </div>
             ))}
