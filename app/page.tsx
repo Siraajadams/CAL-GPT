@@ -475,7 +475,7 @@ export default function Page() {
 
       if (mealError) {
         console.error("SUPABASE MEAL SAVE ERROR:", mealError);
-        alert("Supabase save failed."+ mealError.message);
+        alert("JSON.stringify(mealError));
         return;
       }
 
