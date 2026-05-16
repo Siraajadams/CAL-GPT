@@ -9,7 +9,7 @@ const countries = [
   { name: "United Arab Emirates", code: "+971" },
   { name: "Namibia", code: "+264" },
   { name: "Zimbabwe", code: "+263" },
-  { name: "Ghana", code: "+233" },
+  { name: "New Zealand", code: "+64" },
 ];
 
 const allergyOptions = ["None","Penicillin","Sulfa medicines","Aspirin / NSAIDs","Peanuts","Tree nuts","Shellfish","Fish","Eggs","Milk / lactose","Wheat / gluten","Soy","Other"];
