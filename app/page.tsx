@@ -56,6 +56,15 @@ type MealRecord = {
   foodGroups: string[];
   portionAdvice: string;
   confidence: string;
+  protein_g?: number;
+  carbs_g?: number;
+  fat_g?: number;
+  sugar_g?: number;
+  fibre_g?: number;
+  health_score?: number;
+  weight_loss_friendly?: string;
+  diabetes_friendly?: string;
+  risk_flag?: string;
 };
 
 type WeightRecord = { date: string; weight: number; bmi: number };
@@ -80,6 +89,90 @@ function cleanAIText(text: string) {
     .replace(/\s+/g, " ")
     .trim();
 }
+
+function estimateNutritionScore(notes: string, calories: number) {
+  const text = notes.toLowerCase();
+
+  let protein = 5;
+  let carbs = Math.round(calories * 0.13);
+  let fat = Math.round(calories * 0.03);
+  let sugar = 5;
+  let fibre = 3;
+  let score = 70;
+  let riskFlag = "Low";
+
+  if (
+    text.includes("fruit") ||
+    text.includes("orange") ||
+    text.includes("apple") ||
+    text.includes("banana") ||
+    text.includes("berries")
+  ) {
+    sugar = 15;
+    fibre = 5;
+    score += 8;
+  }
+
+  if (
+    text.includes("nuts") ||
+    text.includes("chicken") ||
+    text.includes("egg") ||
+    text.includes("fish") ||
+    text.includes("beef") ||
+    text.includes("tuna") ||
+    text.includes("beans") ||
+    text.includes("lentils")
+  ) {
+    protein = 18;
+    score += 10;
+  }
+
+  if (
+    text.includes("vegetable") ||
+    text.includes("salad") ||
+    text.includes("broccoli") ||
+    text.includes("spinach") ||
+    text.includes("greens")
+  ) {
+    fibre += 4;
+    score += 8;
+  }
+
+  if (
+    text.includes("cake") ||
+    text.includes("cupcake") ||
+    text.includes("fried") ||
+    text.includes("chips") ||
+    text.includes("cooldrink") ||
+    text.includes("soda") ||
+    text.includes("chocolate")
+  ) {
+    sugar = 25;
+    fat = 18;
+    score -= 20;
+    riskFlag = "Moderate";
+  }
+
+  if (calories > 700) {
+    score -= 15;
+    riskFlag = "High";
+  }
+
+  score = Math.max(0, Math.min(100, score));
+
+  return {
+    protein_g: protein,
+    carbs_g: carbs,
+    fat_g: fat,
+    sugar_g: sugar,
+    fibre_g: fibre,
+    health_score: score,
+    weight_loss_friendly: score >= 70 && calories <= 500 ? "Yes" : "Use caution",
+    diabetes_friendly: sugar <= 15 ? "Yes" : "Use caution",
+    risk_flag: riskFlag,
+  };
+}
+
 
 
 function calcBMI(weight: string | number, height: string | number) {
@@ -273,14 +366,65 @@ export default function Page() {
   }
 
   function resetPassword() {
+    if (!resetEmail || !newPassword) {
+      alert("Enter your email and a new password.");
+      return;
+    }
+
     const saved = JSON.parse(localStorage.getItem("calgpt_ehr") || "null");
-    if (!saved?.profile?.email) return alert("No local EHR profile found on this device.");
-    if (!resetEmail || !newPassword) return alert("Enter your registered email and a new password.");
-    if (saved.profile.email.toLowerCase() !== resetEmail.toLowerCase()) return alert("Email does not match the saved profile on this device.");
-    const updatedProfile = { ...saved.profile, password: newPassword, confirmPassword: newPassword };
-    localStorage.setItem("calgpt_ehr", JSON.stringify({ ...saved, profile: updatedProfile }));
+
+    if (!saved?.profile?.email) {
+      const starterProfile = {
+        ...defaultProfile,
+        email: resetEmail,
+        password: newPassword,
+        confirmPassword: newPassword,
+        country: "South Africa",
+        dialCode: "+27",
+      };
+
+      localStorage.setItem(
+        "calgpt_ehr",
+        JSON.stringify({
+          profile: starterProfile,
+          meals: [],
+          weights: [],
+          sleepRecords: [],
+          activityUpdates: [],
+        })
+      );
+
+      setProfile(starterProfile);
+      setMeals([]);
+      setWeights([]);
+      setSleepRecords([]);
+      setActivityUpdates([]);
+
+      alert("Password created on this device. Please complete your enrolment profile.");
+      setScreen("enroll");
+      return;
+    }
+
+    if (saved.profile.email.toLowerCase() !== resetEmail.toLowerCase()) {
+      alert(
+        "This email does not match the saved profile on this device. For privacy, each device keeps its own local profile. New users can complete first-time enrolment."
+      );
+      return;
+    }
+
+    const updatedProfile = {
+      ...saved.profile,
+      password: newPassword,
+      confirmPassword: newPassword,
+    };
+
+    localStorage.setItem(
+      "calgpt_ehr",
+      JSON.stringify({ ...saved, profile: updatedProfile })
+    );
+
     setProfile(updatedProfile);
-    alert("Password reset successful. You can now login with your new password.");
+    alert("Password reset successful on this device. You can now login with your new password.");
     setScreen("login");
   }
 
@@ -431,6 +575,11 @@ export default function Page() {
       const cleanAdvice = cleanAIText(mealForm.portionAdvice);
       const cleanConfidence = cleanAIText(mealForm.confidence || "medium");
 
+      const nutrition = estimateNutritionScore(
+        cleanNotes + " " + cleanAdvice,
+        Number(mealForm.calories || 0)
+      );
+
       const record: MealRecord = {
         id: Date.now(),
         date: today,
@@ -445,6 +594,7 @@ export default function Page() {
         foodGroups,
         portionAdvice: cleanAdvice,
         confidence: cleanConfidence,
+        ...nutrition,
       };
 
       const nextMeals = [record, ...meals];
@@ -482,6 +632,7 @@ export default function Page() {
         weight: Number(profile.weight || 0) || null,
         height: Number(profile.height || 0) || null,
         bmi: currentBmi || null,
+        ...nutrition,
       };
 
       const res = await fetch("/api/save-meal", {
@@ -662,7 +813,7 @@ export default function Page() {
             <div style={{ ...cardStyle, background: "rgba(255,255,255,0.10)", color: "white" }}>
               <h2 style={{ fontSize: 36, lineHeight: 1.05 }}>Fight food noise. Build healthier habits.</h2>
               <p style={{ color: "#e2e8f0", marginTop: 16 }}>
-                Capture meals, identify food groups, track BMI, sleep, weight and generate patient progress reports.
+                Anyone in the world can click the link and use CalGPT. Capture meals, identify food groups, track BMI, sleep, weight and generate patient progress reports.
               </p>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 24 }}>
@@ -712,7 +863,7 @@ export default function Page() {
         {screen === "reset" && (
           <section style={{ padding: 24 }}>
             <h1 style={{ fontSize: 38 }}>Reset password</h1>
-            <p>This MVP resets the saved local EHR profile on this device.</p>
+            <p>Reset or create a password for the profile saved on this device. New users can create a password and then complete enrolment.</p>
             <div style={cardStyle}>
               <label style={labelStyle}>Registered email
                 <input style={inputStyle} value={resetEmail} onChange={(e) => setResetEmail(e.target.value)} />
@@ -886,6 +1037,15 @@ export default function Page() {
                 <p><b>Detected groups:</b> {m.foodGroups?.join(", ")}</p>
                 {m.portionAdvice && <p><b>Portion advice:</b> {cleanAIText(m.portionAdvice)}</p>}
                 {m.confidence && <p><b>Confidence:</b> {m.confidence}</p>}
+                {m.health_score !== undefined && (
+                  <div style={{ marginTop: 12, background: "#f8fafc", borderRadius: 16, padding: 12 }}>
+                    <p><b>Health score:</b> {m.health_score}/100</p>
+                    <p><b>Macros:</b> Protein {m.protein_g}g • Carbs {m.carbs_g}g • Fat {m.fat_g}g</p>
+                    <p><b>Sugar/Fibre:</b> Sugar {m.sugar_g}g • Fibre {m.fibre_g}g</p>
+                    <p><b>Weight loss:</b> {m.weight_loss_friendly} • <b>Diabetes:</b> {m.diabetes_friendly}</p>
+                    <p><b>Risk flag:</b> {m.risk_flag}</p>
+                  </div>
+                )}
               </div>
             ))}
           </section>
