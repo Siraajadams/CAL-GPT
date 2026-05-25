@@ -1,3 +1,10 @@
+export const metadata = {
+  title: "CalGPT",
+  description: "AI calorie and nutrition tracker",
+  manifest: "/manifest.json",
+  themeColor: "#22C55E",
+};
+
 export default function RootLayout({
   children,
 }: {
