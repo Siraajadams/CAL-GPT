@@ -1,15 +1,13 @@
-import Link from "next/link";
-
 export default function Footer() {
   return (
     <div className="flex gap-4 text-sm">
-      <Link href="/privacy-policy">
+      <a href="/privacy-policy">
         Privacy Policy
-      </Link>
+      </a>
 
-      <Link href="/terms-and-conditions">
+      <a href="/terms-and-conditions">
         Terms & Conditions
-      </Link>
+      </a>
     </div>
   );
 }
