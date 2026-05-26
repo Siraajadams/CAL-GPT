@@ -60,7 +60,7 @@ By using CalGPT, you consent to the collection and use of your information as de
 
 <p>
 For privacy questions contact:
-support@calgpt.com
+support@cal-gpt.com
 </p>
 
 </div>
