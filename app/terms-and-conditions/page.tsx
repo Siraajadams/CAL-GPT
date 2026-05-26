@@ -63,7 +63,7 @@ export default function TermsPage() {
 
       <h2>Contact</h2>
       <p>
-        For support contact: support@calgpt.com
+        For support contact: support@cal-gpt.com
       </p>
     </main>
   );
