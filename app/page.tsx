@@ -325,6 +325,21 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const lastShown = localStorage.getItem("calgpt_morning_reminder");
+    const hour = new Date().getHours();
+
+    if (hour >= 6 && hour <= 11 && lastShown !== todayKey) {
+      setTimeout(() => {
+        alert(
+          "Good morning! Remember to log your meals, water intake, sleep and weight update in CalGPT today."
+        );
+        localStorage.setItem("calgpt_morning_reminder", todayKey);
+      }, 1200);
+    }
+  }, []);
+
+  useEffect(() => {
     const selected = countries.find((c) => c.name === profile.country);
     if (selected) {
       setProfile((p) => ({ ...p, dialCode: selected.code, age: calcAge(p.dob) }));
@@ -395,7 +410,7 @@ export default function Page() {
 
   async function installApp() {
     if (!installPrompt) {
-      alert("To install CalGPT: on Android use Chrome menu → Add to Home Screen. On iPhone use Safari Share → Add to Home Screen.");
+      alert("To install CalGPT: open this link in Chrome, not WhatsApp/Facebook browser. Then tap Chrome menu → Add to Home Screen / Install app. On iPhone use Safari Share → Add to Home Screen.");
       return;
     }
 
@@ -743,6 +758,33 @@ export default function Page() {
     setWeights(nextWeights);
     setProfile(nextProfile);
     saveEHR(nextProfile, meals, nextWeights, sleepRecords, activityUpdates);
+  }
+
+  function updateSleep() {
+    const newSleep = prompt("Enter sleep hours last night, example: 6.5");
+
+    if (!newSleep) return;
+
+    const value = Number(newSleep);
+
+    if (!value || value < 0 || value > 24) {
+      alert("Please enter a valid number of hours.");
+      return;
+    }
+
+    const nextSleep = [
+      ...sleepRecords,
+      {
+        date: today,
+        hours: `${value} hours`,
+        value,
+      },
+    ];
+
+    setSleepRecords(nextSleep);
+    saveEHR(profile, meals, weights, nextSleep, activityUpdates);
+
+    alert("Sleep update saved.");
   }
 
   const mealPlan = [
@@ -1103,6 +1145,17 @@ export default function Page() {
               <h2>AI Insight</h2>
               <p>{aiStatus}</p>
             </div>
+
+            <div style={{ ...cardStyle, background: "#f8fafc" }}>
+              <h2>Daily reminder</h2>
+              <p>Log your latest meal, water intake, sleep and weight updates so CalGPT can keep your weekly plan and progress report accurate.</p>
+              <button style={{ ...buttonStyle, marginTop: 8 }} onClick={() => setScreen("scanner")}>
+                Log latest meal
+              </button>
+              <button style={{ ...buttonStyle, marginTop: 10, background: "#0f172a" }} onClick={updateSleep}>
+                Log sleep
+              </button>
+            </div>
           </section>
         )}
 
@@ -1127,7 +1180,14 @@ export default function Page() {
 
             <div style={cardStyle}><h2>Weight tracking</h2>{barGraph(weights, "weight", "linear-gradient(180deg,#22c55e,#15803d)", "kg")}</div>
             <div style={cardStyle}><h2>BMI tracking</h2>{barGraph(weights, "bmi", "linear-gradient(180deg,#0f172a,#334155)")}</div>
-            <div style={cardStyle}><h2>Weekly sleep tracker</h2><p>Average sleep per night: <b>{avgSleep}</b></p>{sleepGraph()}</div>
+            <div style={cardStyle}>
+              <h2>Weekly sleep tracker</h2>
+              <p>Average sleep per night: <b>{avgSleep}</b></p>
+              {sleepGraph()}
+              <button style={{ ...buttonStyle, marginTop: 12, background: "#0f172a" }} onClick={updateSleep}>
+                Add sleep update
+              </button>
+            </div>
             <button style={buttonStyle} onClick={updateWeight}>Add weight update</button>
           </section>
         )}
