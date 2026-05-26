@@ -31,6 +31,9 @@ const defaultProfile = {
   address: "",
   weight: "",
   height: "",
+  targetWeight: "",
+  targetDate: "",
+  dietaryPreference: "Balanced",
   goal: "Weight loss",
   activity: "Sedentary",
   conditions: "",
@@ -69,6 +72,12 @@ type MealRecord = {
 
 type WeightRecord = { date: string; weight: number; bmi: number };
 type SleepRecord = { date: string; hours: string; value: number };
+
+type BeforeInstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed"; platform: string }>;
+};
+
 
 function calcAge(dob: string) {
   if (!dob) return "";
@@ -265,6 +274,8 @@ export default function Page() {
   const [newPassword, setNewPassword] = useState("");
   const [aiStatus, setAiStatus] = useState("Upload a meal photo, then tap Submit image for AI analysis.");
   const [aiLoading, setAiLoading] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
+  const [isStandalone, setIsStandalone] = useState(false);
 
   const [mealForm, setMealForm] = useState({
     category: "Lunch",
@@ -295,6 +306,25 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
+    const standalone =
+      window.matchMedia("(display-mode: standalone)").matches ||
+      (window.navigator as any).standalone === true;
+
+    setIsStandalone(standalone);
+
+    const handleBeforeInstallPrompt = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as BeforeInstallPromptEvent);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  useEffect(() => {
     const selected = countries.find((c) => c.name === profile.country);
     if (selected) {
       setProfile((p) => ({ ...p, dialCode: selected.code, age: calcAge(p.dob) }));
@@ -312,6 +342,41 @@ export default function Page() {
     : String(sleepCategoryToHours(profile.sleepAverage));
   const avgSleep = `${avgSleepHours} hours/night`;
 
+  const currentWeight = Number(profile.weight || 0);
+  const targetWeight = Number((profile as any).targetWeight || 0);
+  const weightToLose = currentWeight && targetWeight ? Math.max(0, currentWeight - targetWeight) : 0;
+
+  const targetDateValue = (profile as any).targetDate ? new Date((profile as any).targetDate) : null;
+  const weeksToTarget =
+    targetDateValue && targetDateValue.getTime() > Date.now()
+      ? Math.max(1, Math.ceil((targetDateValue.getTime() - Date.now()) / (1000 * 60 * 60 * 24 * 7)))
+      : 12;
+
+  const weeklyLossTarget = weightToLose ? Number((weightToLose / weeksToTarget).toFixed(1)) : 0;
+
+  let targetCalories = 2200;
+
+  if (profile.goal === "Weight loss") targetCalories = 1600;
+  if (profile.goal === "Maintain weight") targetCalories = 2100;
+  if (profile.goal === "Muscle gain") targetCalories = 2600;
+  if (profile.goal === "Medical nutrition support") targetCalories = 1800;
+
+  if (profile.activity === "Active") targetCalories += 250;
+  if (profile.activity === "Moderate") targetCalories += 100;
+  if (profile.activity === "Sedentary") targetCalories -= 150;
+
+  if (weeklyLossTarget > 0) {
+    const dailyDeficit = Math.round((weeklyLossTarget * 7700) / 7);
+    targetCalories = Math.max(1200, targetCalories - Math.min(dailyDeficit, 750));
+  }
+
+  const proteinTarget = Math.max(70, Math.round((currentWeight || 60) * 1.6));
+  const calorieWarning =
+    weeklyLossTarget > 1
+      ? "Your target may be aggressive. A safer weight-loss pace is usually around 0.5kg to 1kg per week."
+      : "Your target appears within a practical weekly weight-loss range.";
+
+
   function saveEHR(
     nextProfile = profile,
     nextMeals = meals,
@@ -326,6 +391,18 @@ export default function Page() {
       sleepRecords: nextSleep,
       activityUpdates: nextActivity,
     }));
+  }
+
+  async function installApp() {
+    if (!installPrompt) {
+      alert("To install CalGPT: on Android use Chrome menu → Add to Home Screen. On iPhone use Safari Share → Add to Home Screen.");
+      return;
+    }
+
+    await installPrompt.prompt();
+    await installPrompt.userChoice;
+    setInstallPrompt(null);
+    setIsStandalone(true);
   }
 
   function logout() {
@@ -669,10 +746,69 @@ export default function Page() {
   }
 
   const mealPlan = [
-    { meal: "Breakfast", food: "Greek yoghurt, berries and oats", portion: "1 cup yoghurt + ½ cup berries + ¼ cup oats", kcal: 380 },
-    { meal: "Lunch", food: "Chicken salad bowl", portion: "1 palm protein + 2 fists salad + 1 thumb olive oil", kcal: 520 },
-    { meal: "Dinner", food: "Fish, vegetables and small starch", portion: "1 palm fish + 2 fists vegetables + ½ fist rice", kcal: 560 },
-    { meal: "Snack", food: "Apple with peanut butter", portion: "1 apple + 1 tablespoon peanut butter", kcal: 210 },
+    {
+      day: "Monday",
+      meals: [
+        { meal: "Breakfast", food: "Greek yoghurt, berries and oats", portion: "1 cup yoghurt + ½ cup berries + ¼ cup oats", kcal: 380 },
+        { meal: "Lunch", food: "Chicken salad bowl", portion: "120g chicken + 2 cups salad + 1 tablespoon olive oil", kcal: 520 },
+        { meal: "Dinner", food: "Fish, vegetables and small starch", portion: "150g fish + 2 cups vegetables + ½ cup rice", kcal: 560 },
+        { meal: "Snack", food: "Apple with peanut butter", portion: "1 apple + 1 tablespoon peanut butter", kcal: 210 },
+      ],
+    },
+    {
+      day: "Tuesday",
+      meals: [
+        { meal: "Breakfast", food: "Eggs and toast", portion: "2 eggs + 1 slice wholewheat toast + tomato", kcal: 350 },
+        { meal: "Lunch", food: "Tuna wrap", portion: "1 wholewheat wrap + 100g tuna + salad", kcal: 480 },
+        { meal: "Dinner", food: "Lean mince, rice and vegetables", portion: "120g lean mince + ½ cup rice + 2 cups vegetables", kcal: 600 },
+        { meal: "Snack", food: "Plain yoghurt", portion: "¾ cup yoghurt + cinnamon", kcal: 160 },
+      ],
+    },
+    {
+      day: "Wednesday",
+      meals: [
+        { meal: "Breakfast", food: "Oats with banana", portion: "40g oats + ½ banana + 1 tablespoon seeds", kcal: 360 },
+        { meal: "Lunch", food: "Chicken wrap", portion: "1 wrap + 120g chicken + salad", kcal: 510 },
+        { meal: "Dinner", food: "Steak and vegetables", portion: "150g steak + 2 cups vegetables + ½ sweet potato", kcal: 640 },
+        { meal: "Snack", food: "Boiled eggs", portion: "2 boiled eggs", kcal: 150 },
+      ],
+    },
+    {
+      day: "Thursday",
+      meals: [
+        { meal: "Breakfast", food: "Smoothie bowl", portion: "1 scoop protein + ½ banana + ½ cup berries", kcal: 340 },
+        { meal: "Lunch", food: "Bean and chicken salad", portion: "100g chicken + ½ cup beans + 2 cups salad", kcal: 530 },
+        { meal: "Dinner", food: "Grilled hake and vegetables", portion: "150g hake + 2 cups vegetables + ½ cup starch", kcal: 540 },
+        { meal: "Snack", food: "Carrot sticks and hummus", portion: "1 cup carrots + 2 tablespoons hummus", kcal: 180 },
+      ],
+    },
+    {
+      day: "Friday",
+      meals: [
+        { meal: "Breakfast", food: "Cottage cheese toast", portion: "1 slice toast + ½ cup cottage cheese", kcal: 330 },
+        { meal: "Lunch", food: "Chicken protein bowl", portion: "120g chicken + ½ cup rice + 2 cups salad", kcal: 560 },
+        { meal: "Dinner", food: "Turkey or lean burger bowl", portion: "120g patty + salad + ½ cup potato wedges", kcal: 620 },
+        { meal: "Snack", food: "Fruit and nuts", portion: "1 fruit + 10 almonds", kcal: 190 },
+      ],
+    },
+    {
+      day: "Saturday",
+      meals: [
+        { meal: "Breakfast", food: "Omelette", portion: "2 eggs + vegetables + ¼ avocado", kcal: 390 },
+        { meal: "Lunch", food: "Grilled chicken and pap", portion: "120g chicken + ½ cup pap + chakalaka/salad", kcal: 580 },
+        { meal: "Dinner", food: "Salmon or pilchards with vegetables", portion: "150g fish + 2 cups vegetables", kcal: 590 },
+        { meal: "Snack", food: "Greek yoghurt", portion: "1 cup yoghurt", kcal: 170 },
+      ],
+    },
+    {
+      day: "Sunday",
+      meals: [
+        { meal: "Breakfast", food: "High-protein oats", portion: "40g oats + 1 scoop protein or ½ cup yoghurt", kcal: 420 },
+        { meal: "Lunch", food: "Roast chicken plate", portion: "120g chicken + 2 cups vegetables + ½ cup starch", kcal: 620 },
+        { meal: "Dinner", food: "Light soup and protein", portion: "2 cups vegetable soup + 100g chicken/beans", kcal: 460 },
+        { meal: "Snack", food: "Apple or berries", portion: "1 apple or 1 cup berries", kcal: 100 },
+      ],
+    },
   ];
 
   const inputStyle: React.CSSProperties = {
@@ -834,6 +970,18 @@ export default function Page() {
               <button style={{ ...buttonStyle, marginTop: 28 }} onClick={() => setScreen("enroll")}>First-time enrolment</button>
               <button style={{ ...buttonStyle, marginTop: 12, background: "transparent", border: "1px solid white", boxShadow: "none" }} onClick={() => setScreen("login")}>Login</button>
               <button style={{ ...buttonStyle, marginTop: 12, background: "rgba(255,255,255,0.16)", border: "1px solid rgba(255,255,255,.45)", boxShadow: "none" }} onClick={() => setScreen("reset")}>Forgot / reset password</button>
+              <button style={{ ...buttonStyle, marginTop: 12, background: "rgba(187,247,208,0.16)", border: "1px solid rgba(187,247,208,.55)", boxShadow: "none" }} onClick={installApp}>
+                {isStandalone ? "CalGPT is installed" : "Download app icon"}
+              </button>
+
+              <div style={{ marginTop: 22, textAlign: "center", fontSize: 14 }}>
+                <a href="/privacy-policy" style={{ color: "#bbf7d0", marginRight: 16, textDecoration: "none", fontWeight: 800 }}>
+                  Privacy Policy
+                </a>
+                <a href="/terms-and-conditions" style={{ color: "#bbf7d0", textDecoration: "none", fontWeight: 800 }}>
+                  Terms & Conditions
+                </a>
+              </div>
             </div>
 
             <div style={{ ...cardStyle, color: "#0f172a" }}>
@@ -893,6 +1041,9 @@ export default function Page() {
               <label style={labelStyle}>Address<input style={inputStyle} value={profile.address} onChange={(e) => setProfile({ ...profile, address: e.target.value })} /></label>
               <label style={labelStyle}>Weight kg<input style={inputStyle} value={profile.weight} onChange={(e) => setProfile({ ...profile, weight: e.target.value })} /></label>
               <label style={labelStyle}>Height cm<input style={inputStyle} value={profile.height} onChange={(e) => setProfile({ ...profile, height: e.target.value })} /></label>
+              <label style={labelStyle}>Target weight kg<input style={inputStyle} value={(profile as any).targetWeight} onChange={(e) => setProfile({ ...profile, targetWeight: e.target.value } as any)} /></label>
+              <label style={labelStyle}>Target date<input style={inputStyle} type="date" value={(profile as any).targetDate} onChange={(e) => setProfile({ ...profile, targetDate: e.target.value } as any)} /></label>
+              <label style={labelStyle}>Dietary preference<select style={inputStyle} value={(profile as any).dietaryPreference} onChange={(e) => setProfile({ ...profile, dietaryPreference: e.target.value } as any)}><option>Balanced</option><option>High protein</option><option>Lower carb</option><option>Vegetarian</option><option>Budget friendly</option><option>South African foods</option></select></label>
 
               <div style={{ background: "linear-gradient(135deg,#ecfdf5,#dbeafe)", borderRadius: 24, padding: 20, marginBottom: 18 }}>
                 <p style={{ fontWeight: 900 }}>BMI</p>
@@ -912,7 +1063,9 @@ export default function Page() {
 
               <label style={{ display: "flex", gap: 10, marginBottom: 18 }}>
                 <input type="checkbox" checked={profile.consent} onChange={(e) => setProfile({ ...profile, consent: e.target.checked })} />
-                I consent to storing my health profile, meal images and calorie records.
+                <span>
+                  I confirm that I am 18 or older and consent to storing my health profile, meal images and calorie records. I agree to the <a href="/terms-and-conditions" style={{ color: "#047857", fontWeight: 900 }}>Terms</a> and <a href="/privacy-policy" style={{ color: "#047857", fontWeight: 900 }}>Privacy Policy</a>.
+                </span>
               </label>
 
               <label style={labelStyle}>Create password<input style={inputStyle} type="password" value={profile.password} onChange={(e) => setProfile({ ...profile, password: e.target.value })} /></label>
@@ -1053,16 +1206,52 @@ export default function Page() {
 
         {screen === "planner" && (
           <section style={{ padding: 20 }}>
-            <h1 style={{ fontSize: 36 }}>Meal Planner</h1>
-            <p>Based on {profile.goal}, BMI {bmi || "--"} and {profile.activity} activity.</p>
-            {mealPlan.map((item) => (
-              <div style={cardStyle} key={item.meal}>
-                <h2>{item.meal}</h2>
-                <h3>{item.food}</h3>
-                <p><b>Portion:</b> {item.portion}</p>
-                <p><b>Calories:</b> {item.kcal} kcal</p>
+            <h1 style={{ fontSize: 36 }}>AI Weekly Meal Planner</h1>
+            <p>Based on {profile.goal}, BMI {bmi || "--"}, {profile.activity} activity and your uploaded calorie tracker patterns.</p>
+
+            <div style={{ ...cardStyle, background: "linear-gradient(135deg,#dcfce7,#ecfeff)" }}>
+              <h2>Personal targets</h2>
+              <p><b>Current weight:</b> {profile.weight || "--"} kg</p>
+              <p><b>Target weight:</b> {(profile as any).targetWeight || "--"} kg</p>
+              <p><b>Target date:</b> {(profile as any).targetDate || "Not set"}</p>
+              <p><b>Weight to lose:</b> {weightToLose || "--"} kg</p>
+              <p><b>Weekly target:</b> {weeklyLossTarget || "--"} kg/week</p>
+              <p><b>Target calories:</b> {targetCalories} kcal/day</p>
+              <p><b>Protein target:</b> {proteinTarget}g/day</p>
+              <p><b>Diet preference:</b> {(profile as any).dietaryPreference || "Balanced"}</p>
+              <p style={{ color: weeklyLossTarget > 1 ? "#b91c1c" : "#047857", fontWeight: 900 }}>{calorieWarning}</p>
+            </div>
+
+            <div style={{ ...cardStyle, background: "#f0fdf4" }}>
+              <h2>AI interpretation logic</h2>
+              <p>CalGPT looks at uploaded meal photos, estimated calories, food groups, visible portion size, BMI, activity level, allergies and weight goals to suggest safer portions.</p>
+              <p><b>Example:</b> if a meal is above your target, CalGPT may suggest reducing starch by 50%, increasing vegetables, or swapping sugary drinks for water.</p>
+            </div>
+
+            {mealPlan.map((dayPlan) => (
+              <div style={cardStyle} key={dayPlan.day}>
+                <h2 style={{ color: "#16a34a", marginBottom: 18 }}>{dayPlan.day}</h2>
+
+                {dayPlan.meals.map((item) => (
+                  <div key={`${dayPlan.day}-${item.meal}`} style={{ borderBottom: "1px solid #e2e8f0", paddingBottom: 14, marginBottom: 14 }}>
+                    <h3>{item.meal}</h3>
+                    <p><b>Food:</b> {item.food}</p>
+                    <p><b>Portion:</b> {item.portion}</p>
+                    <p><b>Calories:</b> {item.kcal} kcal</p>
+                    {item.kcal > targetCalories / 3 && (
+                      <p style={{ color: "#b45309", fontWeight: 900 }}>
+                        Portion note: keep starch controlled and add extra vegetables.
+                      </p>
+                    )}
+                  </div>
+                ))}
               </div>
             ))}
+
+            <div style={{ ...cardStyle, background: "#fff7ed" }}>
+              <h2>Important health note</h2>
+              <p>This plan is general wellness guidance only. It is not medical advice. Users with diabetes, pregnancy, kidney disease, eating disorders, allergies or chronic illness should consult a qualified healthcare professional.</p>
+            </div>
           </section>
         )}
 
