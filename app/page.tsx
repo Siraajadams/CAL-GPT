@@ -274,6 +274,9 @@ export default function Page() {
   const [newPassword, setNewPassword] = useState("");
   const [aiStatus, setAiStatus] = useState("Upload a meal photo, then tap Submit image for AI analysis.");
   const [aiLoading, setAiLoading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [imageProcessing, setImageProcessing] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);
 
@@ -520,13 +523,30 @@ export default function Page() {
     setScreen("login");
   }
 
-  async function handleImage(file: File | undefined) {
-    if (!file) return;
-    try {
-      setAiStatus("Preparing and compressing image...");
+  async function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+
+    if (!file) {
+      setSelectedFile(null);
+      setPreviewUrl("");
       setMealForm((p) => ({
         ...p,
-        imageName: file.name,
+        imageName: "",
+        imageBase64: "",
+      }));
+      return;
+    }
+
+    setSelectedFile(file);
+    setPreviewUrl(URL.createObjectURL(file));
+    setImageProcessing(true);
+
+    try {
+      setAiStatus("Preparing and compressing image...");
+
+      setMealForm((p) => ({
+        ...p,
+        imageName: file.name || "iphone-photo.jpg",
         imageBase64: "",
         notes: "",
         calories: "",
@@ -539,14 +559,16 @@ export default function Page() {
 
       setMealForm((p) => ({
         ...p,
-        imageName: file.name,
+        imageName: file.name || "iphone-photo.jpg",
         imageBase64: base64,
       }));
 
       setAiStatus("Image ready. Tap Submit image for AI analysis.");
     } catch (error) {
       console.error("IMAGE ERROR:", error);
-      setAiStatus("Image upload failed. Please try another photo.");
+      setAiStatus("Image upload failed. Please try selecting from Photo Library.");
+    } finally {
+      setImageProcessing(false);
     }
   }
 
@@ -559,8 +581,13 @@ export default function Page() {
 
   async function submitImageForAI() {
     try {
+      if (imageProcessing) {
+        alert("Image is still preparing. Please wait a few seconds, then submit again.");
+        return;
+      }
+
       if (!mealForm.imageBase64) {
-        alert("Please upload or take a photo first.");
+        alert("Please upload or select a photo first.");
         return;
       }
 
@@ -1196,10 +1223,14 @@ export default function Page() {
           <section style={{ padding: 20 }}>
             <h1 style={{ fontSize: 36 }}>Meal Photo Scanner</h1>
 
-            {mealForm.imageBase64 && (
+            {(previewUrl || mealForm.imageBase64) && (
               <div style={{ ...cardStyle, background: "#020617", padding: 12, overflow: "hidden" }}>
                 <div style={{ background: "#0f172a", color: "white", padding: 12, borderRadius: 18, textAlign: "center", fontWeight: 900, marginBottom: 10 }}>SnapCalorie</div>
-                <img src={mealForm.imageBase64} alt="Selected meal" style={{ width: "100%", maxHeight: 320, objectFit: "cover", borderRadius: 22, display: "block" }} />
+                <img
+                  src={previewUrl || mealForm.imageBase64}
+                  alt="Selected meal"
+                  style={{ width: "100%", maxHeight: 320, objectFit: "cover", borderRadius: 22, display: "block" }}
+                />
                 <button style={{ ...darkButtonStyle, marginTop: 12 }} onClick={submitImageForAI} disabled={aiLoading}>
                   {aiLoading ? "Analyzing..." : "Tap anywhere to analyze"}
                 </button>
@@ -1213,7 +1244,15 @@ export default function Page() {
                 </select>
               </label>
 
-              <input type="file" accept="image/*" capture="environment" style={{ ...inputStyle, marginBottom: 12 }} onChange={(e) => handleImage(e.target.files?.[0])} />
+              <input
+                type="file"
+                accept="image/*"
+                style={{ ...inputStyle, marginBottom: 12 }}
+                onChange={handleImageChange}
+                onClick={(e) => {
+                  (e.currentTarget as HTMLInputElement).value = "";
+                }}
+              />
 
               {!mealForm.imageBase64 && (
                 <button style={{ ...darkButtonStyle, marginBottom: 16 }} onClick={submitImageForAI} disabled={aiLoading}>
@@ -1225,6 +1264,11 @@ export default function Page() {
                 <b>Food group interpreter:</b><br />
                 {(mealForm.foodGroups.length ? mealForm.foodGroups : ["Upload a food image to analyze"]).map(pill)}
                 <p style={{ fontSize: 13 }}>{aiStatus}</p>
+                {selectedFile && (
+                  <p style={{ fontSize: 12, fontWeight: 900, color: "#047857" }}>
+                    Selected image: {selectedFile.name || "iPhone photo"}
+                  </p>
+                )}
 
                 <label style={labelStyle}>Estimated calories
                   <input style={inputStyle} value={mealForm.calories} placeholder="AI estimate will appear here" onChange={(e) => setMealForm({ ...mealForm, calories: e.target.value })} />
